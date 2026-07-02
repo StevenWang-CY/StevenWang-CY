@@ -1,0 +1,15 @@
+{
+  "name": "year-in-twelve-chords",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Renders a GitHub contribution year as a page of twelve guitar chord diagrams (animated SVG, dark + light).",
+  "scripts": {
+    "build": "node src/build.mjs",
+    "demo": "node src/build.mjs --demo heavy --out dist",
+    "fixtures": "node test/make-fixtures.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

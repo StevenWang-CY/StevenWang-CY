@@ -1,0 +1,46 @@
+name: A Year in Twelve Chords
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # daily at 06:00 UTC (the art barely changes day to day)
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - ".github/workflows/chords.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: chords-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Render the chord sheet (dark + light)
+        env:
+          GH_LOGIN: ${{ github.repository_owner }}
+          # GITHUB_TOKEN reads PUBLIC contributions. To include private-contribution
+          # counts, create a classic PAT with `read:user` and store it as the
+          # secret GH_TOKEN (falls back to GITHUB_TOKEN when unset).
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: node src/build.mjs --out dist
+
+      - name: Publish SVGs to the output branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: output
+          keep_files: false
+          commit_message: "chore(chords): refresh contribution art"
