@@ -1,7 +1,6 @@
 <!--
   Profile README for github.com/StevenWang-CY  (repo: StevenWang-CY/StevenWang-CY)
   The hero art auto-updates daily via .github/workflows/chords.yml -> the `output` branch.
-  TODO before publishing: confirm the tagline, and set the website + LinkedIn links below.
 -->
 
 <div align="center">
@@ -22,7 +21,7 @@
 
 <br><br>
 
-<a href="https://example.com">website</a>&nbsp; · &nbsp;<a href="https://www.linkedin.com/in/">LinkedIn</a>&nbsp; · &nbsp;<a href="mailto:stevenwang0805@outlook.com">email</a>
+<a href="https://chuyuewang.vercel.app/">website</a>&nbsp; · &nbsp;<a href="https://www.linkedin.com/in/chuyue-wang/">LinkedIn</a>&nbsp; · &nbsp;<a href="mailto:stevenwang0805@outlook.com">email</a>
 
 <br>
 
