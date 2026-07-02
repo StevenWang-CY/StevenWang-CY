@@ -43,5 +43,3 @@ Action and rendered as a JS-free animated SVG (dark + light). No snakes were har
 </details>
 
 </div>
-
-<!-- profile readme -->
