@@ -1,17 +1,17 @@
 // A Year in Twelve Chords — deterministic SVG generator.
 //
-// Given a *shaped* year (12 months of contribution data) and a theme, returns
-// an SVG string: a row of twelve guitar chord-diagram boxes, one per month.
-//   - box            = month
-//   - 6 strings      = Mon..Sat (top->bottom = low E -> high e)
-//   - fret columns   = week-of-month (ceil(dayOfMonth/7), 1..5)
-//   - filled dot     = an active day (radius bucketed by commit count)
-//   - hollow ring    = that month's busiest day (the chord "root")
-//   - o / x above    = Sunday contributed / didn't (the 7th-day resolution)
-//   - slur arcs      = streaks (consecutive active days joined dot-to-dot)
-//   - box outline ◆  = the "home chord" (month with the highest total)
+// Renders 12 guitar chord-diagram boxes (one per contribution month) and
+// animates them as "The Year, Played Once": a single brass pick-bead performs
+// the page left->right as one legato lead. Its landing height traces the year's
+// melodic contour (each month's busiest weekday); every landing plucks that
+// string into a damped standing wave, blooms the root ring with a ripple,
+// brightens the notes, re-inks a legato tie over a faint pre-printed staff, and
+// wakes the neighbouring month in sympathy — climaxing on the home chord's
+// fermata (rising sustain rings, glowing frame, a swaying diamond).
 //
-// Motion is pure SMIL (JS-free) so it animates when embedded via <img>/<picture>.
+// Motion is pure declarative SMIL on ONE shared period (repeatCount=indefinite,
+// absolute keyTimes — no syncbase, no JS), so it animates and loops seamlessly
+// when embedded via <img>/<picture>. Frame 0 is a clean, legible resting sheet.
 
 // ---------- palettes ----------
 
@@ -23,11 +23,12 @@ export const PALETTES = {
     accent: '#E0A458',
     stringOpacity: 0.55,
     fretOpacity: 0.32,
-    slurOpacity: 0.55,
+    slurOpacity: 0.5,
+    printOpacity: 0.26,
     labelOpacity: 0.82,
     subOpacity: 0.6,
-    strumMid: 0.3,
-    paperGrain: 0,
+    haloPeak: 0.55,
+    shimmerPeak: 0.95,
   },
   light: {
     id: 'light',
@@ -36,11 +37,12 @@ export const PALETTES = {
     accent: '#C8892F',
     stringOpacity: 0.6,
     fretOpacity: 0.34,
-    slurOpacity: 0.62,
+    slurOpacity: 0.6,
+    printOpacity: 0.3,
     labelOpacity: 0.88,
     subOpacity: 0.66,
-    strumMid: 0.24,
-    paperGrain: 0.02,
+    haloPeak: 0.42,
+    shimmerPeak: 0.9,
   },
 };
 
@@ -48,34 +50,45 @@ export const PALETTES = {
 
 const W = 880;
 const H = 168;
-const X0 = 34; // first box left
-const STEP = 66; // box-to-box horizontal step
-const BOX_W = 50; // 5 columns * 10px
+const X0 = 34;
+const STEP_X = 66;
+const BOX_W = 50;
 const COL_W = 10;
 
 const TITLE_Y = 22;
 const MONTH_LABEL_Y = 52;
 const SUNDAY_Y = 66;
-const ROW_TOP = 82; // Mon
+const ROW_TOP = 82;
 const ROW_GAP = 8;
 const LINE_TOP = 78;
 const LINE_BOT = 126;
 const TOTAL_Y = 142;
-const FRAME_TOP = 44; // home-chord outline
+const FRAME_TOP = 44;
 const FRAME_BOT = 150;
 const LEGEND_X = 26;
+const REST_Y = 102; // where the bead lands for a silent month
 
 const FONT = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 
-const boxLeft = (i) => X0 + i * STEP;
-const colCenter = (L, c) => L + c * COL_W - 5; // c = 1..5 -> +5,15,25,35,45
-const rowY = (r) => ROW_TOP + r * ROW_GAP; // r = 0..5 (Mon..Sat)
+// ---------- timing (seconds) ----------
+
+const STEP = 1.0; // one month per second
+const DWELL = 0.45; // note rings while the bead rests on a fret
+const FLY = 0.55; // hop flight (DWELL + FLY = STEP)
+const HOP = 9; // arc lift of a hop
+const NOTE = 0.7; // note-bloom duration
+const FERM = 1.6; // home-chord fermata sustain
+const RESTBAR = 0.9; // breath before the loop repeats
+
+const boxLeft = (i) => X0 + i * STEP_X;
+const colCenter = (L, c) => L + c * COL_W - 5;
+const rowY = (r) => ROW_TOP + r * ROW_GAP;
 
 const r1 = (n) => Math.round(n * 10) / 10;
+const r4 = (n) => Math.round(n * 1e4) / 1e4;
 const esc = (s) =>
   String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-// commit-count -> dot radius (fixed buckets; capped to protect 8px string gap)
 function bucketRadius(count) {
   if (count <= 0) return 0;
   if (count <= 3) return 1.6;
@@ -84,14 +97,17 @@ function bucketRadius(count) {
   return 3.8;
 }
 
-// staggered strum timing on a single 10s loop; box i is "played" in its slice
-function slice(i) {
-  const a = +(i * 0.07).toFixed(4);
-  const b = +(a + 0.08).toFixed(4);
-  const a2 = +(a + 0.004).toFixed(4);
-  const b2 = +(b - 0.004).toFixed(4);
-  const mid = +((a + b) / 2).toFixed(4);
-  return { a, b, a2, b2, mid };
+// approximate quadratic-Bezier length (for a tie's stroke-dash length)
+function quadLen(ax, ay, cx, cy, bx, by, n = 16) {
+  let len = 0, px = ax, py = ay;
+  for (let k = 1; k <= n; k++) {
+    const t = k / n, u = 1 - t;
+    const x = u * u * ax + 2 * u * t * cx + t * t * bx;
+    const y = u * u * ay + 2 * u * t * cy + t * t * by;
+    len += Math.hypot(x - px, y - py);
+    px = x; py = y;
+  }
+  return len;
 }
 
 // ---------- rendering ----------
@@ -101,22 +117,72 @@ export function renderChords(shaped, theme) {
   const { months, totalContributions, homeIndex } = shaped;
   const homeLabel = homeIndex >= 0 && months[homeIndex] ? months[homeIndex].label : '—';
 
-  const dotCenters = {}; // date -> {x, y} for slur routing
+  // --- landing point of the pick for each month (traces the melodic contour) ---
+  const pts = months.map((m, i) => {
+    const L = boxLeft(i);
+    if (!m.rootDate || m.total <= 0) return { x: L + 25, y: REST_Y, kind: 'rest' };
+    if (m.rootIsSunday) return { x: colCenter(L, m.rootCol), y: SUNDAY_Y, kind: 'sun' };
+    const day = m.days.find((d) => d.date === m.rootDate);
+    const row = (day ? day.weekday : 1) - 1;
+    return { x: colCenter(L, m.rootCol), y: rowY(row), row, kind: 'string' };
+  });
+
+  // arcs between consecutive landings (used by the bead's path, the ties, the printed staff)
+  const arcs = [];
+  for (let i = 0; i < months.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const mx = (a.x + b.x) / 2;
+    const my = Math.min(a.y, b.y) - HOP;
+    arcs.push({ a, b, mx, my, d: `M${r1(a.x)} ${r1(a.y)}Q${r1(mx)} ${r1(my)} ${r1(b.x)} ${r1(b.y)}`, len: quadLen(a.x, a.y, mx, my, b.x, b.y) });
+  }
+
+  // --- timeline ---
+  const n = months.length; // 12
+  const lastLand = (n - 1) * STEP; // 11
+  const A = (j) => j * STEP; // landing time of box j
+  const aHome = homeIndex >= 0 ? A(homeIndex) : null;
+  let PERIOD = lastLand + RESTBAR;
+  if (aHome != null) PERIOD = Math.max(PERIOD, aHome + FERM + 0.3);
+  PERIOD = r4(PERIOD);
+  const r3 = (x) => Math.round(x * 1e3) / 1e3;
+  const f = (t) => r3(Math.min(1, Math.max(0, t / PERIOD)));
+
+  // period-looped animation-string helpers (absolute keyTimes; no syncbase)
+  const animEl = (attr, kt, vs, calc = 'linear', splines = '') =>
+    `<animate attributeName="${attr}" dur="${PERIOD}s" repeatCount="indefinite" calcMode="${calc}" keyTimes="${kt}" values="${vs}"` +
+    (calc === 'spline' ? ` keySplines="${splines}"` : '') + ` fill="freeze"/>`;
+
+  // a single bump: rest -> mids... -> rest, active in [T, T+D]
+  const pulse = (attr, rest, mids, T, D) => {
+    const f0 = f(T), f1 = f(T + D);
+    const kt = ['0', f0], vs = [rest, mids[0]];
+    for (let k = 1; k < mids.length; k++) { kt.push(r4(f0 + (f1 - f0) * k / (mids.length - 1))); vs.push(mids[k]); }
+    kt.push('1'); vs.push(rest);
+    return animEl(attr, kt.join(';'), vs.join(';'));
+  };
+  // multiple bumps of a single peak at several times (for sympathetic shimmer)
+  const bumps = (attr, rest, peak, times, D) => {
+    const segs = times.filter((t) => t != null).map((t) => [f(t), f(t + D)]).sort((x, y) => x[0] - y[0]);
+    if (!segs.length) return '';
+    const kt = ['0'], vs = [rest];
+    for (const [s, e] of segs) { kt.push(s, r4((s + e) / 2), e); vs.push(rest, peak, rest); }
+    kt.push('1'); vs.push(rest);
+    return animEl(attr, kt.join(';'), vs.join(';'));
+  };
+
+  const dotCenters = {}; // date -> {x,y} for streak slurs
+  const boxDots = months.map(() => []); // per-box dot centres for the fermata gleam
   const parts = [];
 
-  // defs: the soft strum glow gradient + optional paper grain
-  parts.push(`<defs>
-    <linearGradient id="strum-${p.id}" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="${p.accent}" stop-opacity="0"/>
-      <stop offset="0.5" stop-color="${p.accent}" stop-opacity="${p.strumMid}"/>
-      <stop offset="1" stop-color="${p.accent}" stop-opacity="0"/>
-    </linearGradient>
-  </defs>`);
+  // defs: one shared soft-glow filter (halo + gleam)
+  parts.push(
+    `<defs><filter id="glow-${p.id}" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="2"/></filter></defs>`
+  );
 
   // background
   parts.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="${p.bg}"/>`);
 
-  // title band
+  // title
   parts.push(
     `<text x="${X0}" y="${TITLE_Y}" font-family="${FONT}" font-size="11" letter-spacing="2.5" fill="${p.ink}" fill-opacity="${p.labelOpacity}">A YEAR IN TWELVE CHORDS</text>`
   );
@@ -126,161 +192,254 @@ export function renderChords(shaped, theme) {
     )} total · home chord: ${esc(homeLabel)}</text>`
   );
 
-  // left legend (drawn once, shared by every box)
-  const legend = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-  const legendY = [SUNDAY_Y, rowY(0), rowY(1), rowY(2), rowY(3), rowY(4), rowY(5)];
-  legend.forEach((lab, k) => {
+  // left legend (once)
+  ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].forEach((lab, k) => {
+    const y = (k === 0 ? SUNDAY_Y : rowY(k - 1)) + 2.4;
     parts.push(
-      `<text x="${LEGEND_X}" y="${legendY[k] + 2.4}" text-anchor="end" font-family="${FONT}" font-size="7" fill="${p.ink}" fill-opacity="0.5">${lab}</text>`
+      `<text x="${LEGEND_X}" y="${y}" text-anchor="end" font-family="${FONT}" font-size="7" fill="${p.ink}" fill-opacity="0.5">${lab}</text>`
     );
   });
 
-  // twelve boxes
+  // printed melody staff (the whole year's contour, pre-printed like real sheet music)
+  const staffD = arcs.map((s) => s.d).join('');
+  if (staffD) {
+    parts.push(
+      `<path d="${staffD}" fill="none" stroke="${p.ink}" stroke-width="0.7" stroke-opacity="${p.printOpacity}">` +
+        pulse('stroke-opacity', p.printOpacity, [p.printOpacity, r4(p.printOpacity + 0.08), p.printOpacity], lastLand + 0.1, RESTBAR - 0.2) +
+        `</path>`
+    );
+  }
+  const slurSlot = parts.length; // streak slurs get spliced here (under dots)
+
+  // shimmer schedule: for box i, which rows shimmer and at what times (a neighbour's root row)
+  const shimmer = months.map(() => ({}));
+  for (let i = 0; i < n; i++) {
+    for (const nb of [i - 1, i + 1]) {
+      if (nb < 0 || nb >= n) continue;
+      if (pts[nb].kind !== 'string') continue;
+      const row = pts[nb].row;
+      (shimmer[i][row] = shimmer[i][row] || []).push(A(nb) + 0.15);
+    }
+  }
+
+  // ---- boxes ----
   months.forEach((m, i) => {
     const L = boxLeft(i);
     const cx = L + BOX_W / 2;
     const isHome = i === homeIndex;
     const empty = m.total <= 0;
-    const { a, b, a2, b2, mid } = slice(i);
-
+    const T = A(i);
     const g = [];
 
-    // home-chord frame
+    // home frame + fermata halo
     if (isHome) {
       g.push(
-        `<rect x="${r1(L - 5)}" y="${FRAME_TOP}" width="${BOX_W + 10}" height="${
-          FRAME_BOT - FRAME_TOP
-        }" rx="4" fill="none" stroke="${p.accent}" stroke-width="1.1" stroke-opacity="0.9"/>`
+        `<rect x="${r1(L - 5)}" y="${FRAME_TOP}" width="${BOX_W + 10}" height="${FRAME_BOT - FRAME_TOP}" rx="4" fill="none" stroke="${p.accent}" stroke-opacity="0.9" stroke-width="1.1">` +
+          pulse('stroke-width', '1.1', ['1.1', '1.6', '1.1'], T, FERM) +
+          `</rect>`
+      );
+      g.push(
+        `<rect x="${r1(L - 5)}" y="${FRAME_TOP}" width="${BOX_W + 10}" height="${FRAME_BOT - FRAME_TOP}" rx="5" fill="none" stroke="${p.accent}" stroke-width="2.4" filter="url(#glow-${p.id})" opacity="0">` +
+          pulse('opacity', '0', ['0', String(p.haloPeak), '0'], T, FERM) +
+          `</rect>`
       );
     }
 
     // month label
     g.push(
-      `<text x="${cx}" y="${MONTH_LABEL_Y}" text-anchor="middle" font-family="${FONT}" font-size="9" fill="${p.ink}" fill-opacity="${p.labelOpacity}">${esc(
-        m.label
-      )}</text>`
+      `<text x="${cx}" y="${MONTH_LABEL_Y}" text-anchor="middle" font-family="${FONT}" font-size="9" fill="${p.ink}" fill-opacity="${p.labelOpacity}">${esc(m.label)}</text>`
     );
 
-    // strings (6 horizontal lines)
+    // strings (static frame) + sympathetic shimmer where a neighbour's root shares the row
+    const slines = [];
     for (let r = 0; r < 6; r++) {
       const y = rowY(r);
-      g.push(
-        `<line x1="${L}" y1="${y}" x2="${L + BOX_W}" y2="${y}" stroke="${p.ink}" stroke-width="0.7" stroke-opacity="${p.stringOpacity}"/>`
+      const times = shimmer[i][r];
+      slines.push(
+        times && times.length
+          ? `<line x1="${L}" y1="${y}" x2="${L + BOX_W}" y2="${y}">${bumps('stroke-opacity', String(p.stringOpacity), String(p.shimmerPeak), times, 0.6)}</line>`
+          : `<line x1="${L}" y1="${y}" x2="${L + BOX_W}" y2="${y}"/>`
       );
     }
-    // nut (thick) + frets (thin)
-    for (let k = 0; k <= 5; k++) {
+    g.push(`<g stroke="${p.ink}" stroke-width="0.7" stroke-opacity="${p.stringOpacity}">${slines.join('')}</g>`);
+    // frets (shared attrs) + the thick nut
+    const frets = [];
+    for (let k = 1; k <= 5; k++) {
       const x = L + k * COL_W;
-      if (k === 0) {
-        g.push(
-          `<line x1="${x}" y1="${LINE_TOP}" x2="${x}" y2="${LINE_BOT}" stroke="${p.ink}" stroke-width="2.4" stroke-opacity="0.9" stroke-linecap="round"/>`
-        );
-      } else {
-        g.push(
-          `<line x1="${x}" y1="${LINE_TOP + 2}" x2="${x}" y2="${LINE_BOT - 2}" stroke="${p.ink}" stroke-width="0.6" stroke-opacity="${p.fretOpacity}"/>`
-        );
-      }
+      frets.push(`<line x1="${x}" y1="${LINE_TOP + 2}" x2="${x}" y2="${LINE_BOT - 2}"/>`);
+    }
+    g.push(`<g stroke="${p.ink}" stroke-width="0.6" stroke-opacity="${p.fretOpacity}">${frets.join('')}</g>`);
+    g.push(`<line x1="${L}" y1="${LINE_TOP}" x2="${L}" y2="${LINE_BOT}" stroke="${p.ink}" stroke-width="2.4" stroke-opacity="0.9" stroke-linecap="round"/>`);
+
+    // standing-wave overlay for a struck string root (endpoint-pinned pluck; home = octave S-curve)
+    if (pts[i].kind === 'string') {
+      const yy = pts[i].y;
+      const d = isHome ? 'M0 0 Q12.5 -6 25 0 Q37.5 6 50 0' : 'M0 0 Q25 -6 50 0';
+      g.push(
+        `<g transform="translate(${L} ${yy})"><path d="${d}" fill="none" stroke="${p.accent}" stroke-width="0.9" opacity="0" transform="scale(1 0)">` +
+          `<animateTransform attributeName="transform" type="scale" dur="${PERIOD}s" repeatCount="indefinite" calcMode="linear" keyTimes="0;${f(T)};${r3(f(T) + (f(T + NOTE) - f(T)) * 0.2)};${r3(f(T) + (f(T + NOTE) - f(T)) * 0.44)};${r3(f(T) + (f(T + NOTE) - f(T)) * 0.66)};${r3(f(T) + (f(T + NOTE) - f(T)) * 0.85)};${f(T + NOTE)};1" values="1 0;1 0;1 1;1 -0.62;1 0.4;1 -0.22;1 0;1 0" fill="freeze"/>` +
+          pulse('opacity', '0', ['0', '0.9', '0.9', '0'], T, NOTE) +
+          `</path></g>`
+      );
     }
 
-    // Sunday o/x strip (weekday 0). Busiest-day-is-Sunday -> brass emphasis.
+    // Sunday o/x strip (o-root blooms; no more x-flinch)
     for (const [colStr, mark] of Object.entries(m.sundayByCol)) {
       const c = Number(colStr);
       const x = colCenter(L, c);
-      const brass = m.rootIsSunday && m.rootCol === c;
-      const col = brass ? p.accent : p.ink;
-      const op = brass ? 1 : mark === 'o' ? 0.85 : 0.5;
+      const isRoot = m.rootIsSunday && m.rootCol === c;
+      const col = isRoot ? p.accent : p.ink;
+      const op = isRoot ? 1 : mark === 'o' ? 0.85 : 0.5;
       if (mark === 'o') {
         g.push(
-          `<circle cx="${x}" cy="${SUNDAY_Y}" r="${brass ? 2.6 : 2}" fill="none" stroke="${col}" stroke-width="${brass ? 1.2 : 0.9}" stroke-opacity="${op}"/>`
+          `<circle cx="${x}" cy="${SUNDAY_Y}" r="${isRoot ? 2.6 : 2}" fill="none" stroke="${col}" stroke-width="${isRoot ? 1.2 : 0.9}" stroke-opacity="${op}">` +
+            (isRoot ? pulse('r', '2.6', ['2.6', '3.4', '2.6'], T, NOTE) : '') +
+            `</circle>`
         );
       } else {
-        // muted 'x' with a tiny flinch as the strum passes
         g.push(
           `<g stroke="${col}" stroke-width="0.9" stroke-opacity="${op}" stroke-linecap="round">` +
             `<line x1="${x - 2}" y1="${SUNDAY_Y - 2}" x2="${x + 2}" y2="${SUNDAY_Y + 2}"/>` +
-            `<line x1="${x - 2}" y1="${SUNDAY_Y + 2}" x2="${x + 2}" y2="${SUNDAY_Y - 2}"/>` +
-            `<animateTransform attributeName="transform" type="translate" dur="10s" repeatCount="indefinite" keyTimes="0;${a};${a2};${b2};${b};1" values="0 0;0 0;2 0;-2 0;0 0;0 0"/>` +
-            `</g>`
+            `<line x1="${x - 2}" y1="${SUNDAY_Y + 2}" x2="${x + 2}" y2="${SUNDAY_Y - 2}"/></g>`
         );
       }
     }
 
-    // dots (Mon..Sat active days) + root ring, wrapped in a pulsing group
+    // dots + root ring; the root blooms (r + a fading ripple) as the note is struck
     const dots = [];
+    let rootRing = '';
     for (const d of m.days) {
-      if (d.weekday === 0 || d.count <= 0) continue; // Sunday handled above
-      const r = d.weekday - 1; // Mon..Sat -> 0..5
+      if (d.weekday === 0 || d.count <= 0) continue;
+      const r = d.weekday - 1;
       const c = d.weekOfMonth;
       const x = colCenter(L, c);
       const y = rowY(r);
       dotCenters[d.date] = { x, y };
+      boxDots[i].push({ x, y });
       const rad = bucketRadius(d.count);
       const isRoot = !m.rootIsSunday && m.rootDate === d.date;
       if (isRoot) {
-        dots.push(
-          `<circle cx="${x}" cy="${y}" r="${r1(rad + 1)}" fill="none" stroke="${p.accent}" stroke-width="1.3"/>`
-        );
+        const R = r1(rad + 1);
+        rootRing =
+          `<circle cx="${x}" cy="${y}" r="${R}" fill="none" stroke="${p.accent}" stroke-width="1.3">` +
+          pulse('r', String(R), [String(R), String(r1(R + 1.6)), String(R)], T, NOTE) +
+          pulse('stroke-width', '1.3', ['1.3', '2', '1.3'], T, NOTE) +
+          `</circle>`;
       } else {
         dots.push(`<circle cx="${x}" cy="${y}" r="${rad}"/>`);
       }
     }
-    if (dots.length) {
-      g.push(
-        `<g fill="${p.ink}">${dots.join('')}<animate attributeName="opacity" dur="10s" repeatCount="indefinite" keyTimes="0;${a};${mid};${b};1" values="0.85;0.85;1;0.85;0.85"/></g>`
-      );
+    if (dots.length || rootRing) {
+      g.push(`<g fill="${p.ink}">${dots.join('')}${rootRing}</g>`);
     }
 
-    // monthly total (or N.C. for a silent month)
+    // monthly total (home: number + a swaying ◆)
     g.push(
       `<text x="${cx}" y="${TOTAL_Y}" text-anchor="middle" font-family="${FONT}" font-size="8.5" fill="${p.ink}" fill-opacity="${p.subOpacity}">${
-        empty ? 'N.C.' : esc(m.total.toLocaleString('en-US')) + (isHome ? ' ◆' : '')
+        empty ? 'N.C.' : esc(m.total.toLocaleString('en-US'))
       }</text>`
     );
-
-    // strum: a soft brass band sweeping down across the six strings in its slice
-    g.push(
-      `<rect x="${L}" y="${LINE_TOP}" width="${BOX_W}" height="7" rx="3" fill="url(#strum-${p.id})" opacity="0">` +
-        `<animate attributeName="opacity" dur="10s" repeatCount="indefinite" keyTimes="0;${a};${a2};${b2};${b};1" values="0;0;0.9;0.9;0;0"/>` +
-        `<animateTransform attributeName="transform" type="translate" dur="10s" repeatCount="indefinite" keyTimes="0;${a};${b};1" values="0 0;0 0;0 ${
-          LINE_BOT - LINE_TOP - 5
-        };0 ${LINE_BOT - LINE_TOP - 5}"/>` +
-        `</rect>`
-    );
+    if (isHome && !empty) {
+      const dx = cx + String(m.total).length * 2.6 + 6;
+      g.push(
+        `<g transform="translate(${r1(dx)} ${TOTAL_Y - 3})"><g><path d="M0 -3.2L3.2 0L0 3.2L-3.2 0Z" fill="${p.accent}"/>` +
+          `<animateTransform attributeName="transform" type="scale" dur="${PERIOD}s" repeatCount="indefinite" calcMode="linear" keyTimes="0;${f(T)};${r4((f(T) + f(T + FERM)) / 2)};${f(T + FERM)};1" values="1;1;1.28;1;1" additive="sum" fill="freeze"/>` +
+          `<animateTransform attributeName="transform" type="rotate" dur="${PERIOD}s" repeatCount="indefinite" calcMode="linear" keyTimes="0;${f(T)};${r4(f(T) + (f(T + FERM) - f(T)) * 0.33)};${r4(f(T) + (f(T + FERM) - f(T)) * 0.66)};${f(T + FERM)};1" values="0;0;8;-8;0;0" additive="sum" fill="freeze"/>` +
+          `</g></g>`
+      );
+    }
 
     parts.push(`<g>${g.join('')}</g>`);
   });
 
-  // slurs: connect consecutive (diff == 1 day) active dot-days *within a month*
-  // (a legato phrase). Cross-month ties are omitted — across the box gap they
-  // read as stray hairs rather than slurs.
+  // streak slurs (static; under dots) — spliced into the printed-staff slot
   const dates = Object.keys(dotCenters).sort();
-  const arcs = [];
+  const streak = [];
   for (let k = 1; k < dates.length; k++) {
-    const prev = dates[k - 1];
-    const cur = dates[k];
-    if (dayDiff(prev, cur) !== 1) continue;
-    if (prev.slice(0, 7) !== cur.slice(0, 7)) continue; // same month only
-    const A = dotCenters[prev];
-    const B = dotCenters[cur];
-    const mx = (A.x + B.x) / 2;
-    const my = Math.min(A.y, B.y) - 6;
-    arcs.push(`<path d="M${r1(A.x)} ${r1(A.y)}Q${r1(mx)} ${r1(my)} ${r1(B.x)} ${r1(B.y)}"/>`);
+    const pr = dates[k - 1], cu = dates[k];
+    if (dayDiff(pr, cu) !== 1 || pr.slice(0, 7) !== cu.slice(0, 7)) continue;
+    const Aa = dotCenters[pr], Bb = dotCenters[cu];
+    const mx = (Aa.x + Bb.x) / 2, my = Math.min(Aa.y, Bb.y) - 6;
+    streak.push(`<path d="M${r1(Aa.x)} ${r1(Aa.y)}Q${r1(mx)} ${r1(my)} ${r1(Bb.x)} ${r1(Bb.y)}"/>`);
   }
-  // slurs sit under the dots so dots stay crisp on top; shared stroke on the group
-  if (arcs.length) {
-    parts.splice(
-      2,
-      0,
-      `<g fill="none" stroke="${p.ink}" stroke-width="0.8" stroke-opacity="${p.slurOpacity}">${arcs.join('')}</g>`
+  if (streak.length) {
+    parts.splice(slurSlot, 0, `<g fill="none" stroke="${p.ink}" stroke-width="0.8" stroke-opacity="${p.slurOpacity}">${streak.join('')}</g>`);
+  }
+
+  // ---- overlay: legato ties (drawn under the flying bead), fermata sustain rings, gleam, bead ----
+  const overlay = [];
+
+  // legato ties: each draws during its flight, then fades; the printed staff remains
+  arcs.forEach((s, i) => {
+    const Li = r1(s.len);
+    const t0 = A(i) + DWELL; // flight start
+    const t1 = A(i + 1); // flight end (landing)
+    const fd = f(t0), fl = f(t1), fade = f(t1 + 0.8);
+    overlay.push(
+      `<path d="${s.d}" fill="none" stroke="${p.accent}" stroke-width="1" stroke-dasharray="${Li}" stroke-dashoffset="${Li}" opacity="0">` +
+        animEl('stroke-dashoffset', `0;${fd};${fl};1`, `${Li};${Li};0;0`) +
+        animEl('opacity', `0;${fd};${r4(fd + 0.004)};${fl};${fade};1`, `0;0;1;1;0;0`) +
+        `</path>`
+    );
+  });
+
+  // fermata sustain rings + neighbour gleam (home only, string/sun root)
+  if (homeIndex >= 0 && (pts[homeIndex].kind === 'string' || pts[homeIndex].kind === 'sun')) {
+    const hx = pts[homeIndex].x, hy = pts[homeIndex].y, T = A(homeIndex);
+    const ring = (begin) => {
+      const g0 = f(begin), g1 = f(begin + 1.3);
+      return (
+        `<g opacity="1"><circle cx="${hx}" cy="${hy}" r="3" fill="none" stroke="${p.accent}" stroke-width="1.2" stroke-opacity="0">` +
+        animEl('r', `0;${g0};${g1};1`, `3;3;16;16`) +
+        animEl('stroke-width', `0;${g0};${g1};1`, `1.2;1.2;0.3;0.3`) +
+        animEl('stroke-opacity', `0;${g0};${r4((g0 + g1) / 2)};${g1};1`, `0;0;0.5;0;0`) +
+        `<animateTransform attributeName="transform" type="translate" dur="${PERIOD}s" repeatCount="indefinite" calcMode="linear" keyTimes="0;${g0};${g1};1" values="0 0;0 0;0 -3;0 -3" fill="freeze"/>` +
+        `</circle></g>`
+      );
+    };
+    overlay.push(ring(T));
+    overlay.push(ring(T + 0.5));
+    // gleam the nearest dot in each neighbour month
+    for (const nb of [homeIndex - 1, homeIndex + 1]) {
+      if (nb < 0 || nb >= n || !boxDots[nb].length) continue;
+      const pick = nb < homeIndex
+        ? boxDots[nb].reduce((a, b) => (b.x > a.x ? b : a))
+        : boxDots[nb].reduce((a, b) => (b.x < a.x ? b : a));
+      overlay.push(
+        `<circle cx="${pick.x}" cy="${pick.y}" r="3.4" fill="none" stroke="${p.accent}" stroke-opacity="0">` +
+          pulse('stroke-opacity', '0', ['0', '0.6', '0'], T + 0.4, NOTE) +
+          `</circle>`
+      );
+    }
+  }
+
+  // the pick-bead: cx/cy keyframed to land exactly on each root (arc via an apex keyframe)
+  {
+    const kt = [0], cxv = [pts[0].x], cyv = [pts[0].y];
+    for (let i = 0; i < arcs.length; i++) {
+      const ts = A(i) + DWELL, tm = ts + FLY / 2, te = A(i + 1);
+      kt.push(ts, tm, te);
+      cxv.push(pts[i].x, arcs[i].mx, pts[i + 1].x);
+      cyv.push(pts[i].y, arcs[i].my, pts[i + 1].y);
+    }
+    kt.push(PERIOD); cxv.push(pts[n - 1].x); cyv.push(pts[n - 1].y);
+    const ktn = kt.map((t) => f(t)).join(';');
+    overlay.push(
+      `<circle r="1.7" fill="${p.accent}" cx="${r1(pts[0].x)}" cy="${r1(pts[0].y)}">` +
+        `<animate attributeName="cx" dur="${PERIOD}s" repeatCount="indefinite" calcMode="linear" keyTimes="${ktn}" values="${cxv.map(r1).join(';')}" fill="freeze"/>` +
+        `<animate attributeName="cy" dur="${PERIOD}s" repeatCount="indefinite" calcMode="linear" keyTimes="${ktn}" values="${cyv.map(r1).join(';')}" fill="freeze"/>` +
+        `</circle>`
     );
   }
 
-  const svg =
+  parts.push(`<g>${overlay.join('')}</g>`);
+
+  return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" role="img" ` +
-    `aria-label="A Year in Twelve Chords: my GitHub contributions as a page of guitar chord diagrams, one box per month">` +
+    `aria-label="A Year in Twelve Chords: my GitHub contributions as a page of guitar chord diagrams, played once left to right as a single legato lead">` +
     parts.join('') +
-    `</svg>`;
-  return svg;
+    `</svg>`
+  );
 }
 
 function dayDiff(a, b) {
