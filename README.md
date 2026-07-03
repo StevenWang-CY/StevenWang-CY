@@ -7,8 +7,6 @@
 
 ### Chuyue “Steven” Wang
 
-<em>building AI agents that stay honest — and playing guitar between commits</em>
-
 <br>
 
 <picture>
