@@ -49,24 +49,20 @@ export const PALETTES = {
 // ---------- geometry ----------
 
 const W = 880;
-const H = 168;
-const X0 = 34;
+const H = 104;
+const X0 = 52; // centres the 12 boxes (no legend/title anymore)
 const STEP_X = 66;
 const BOX_W = 50;
 const COL_W = 10;
 
-const TITLE_Y = 22;
-const MONTH_LABEL_Y = 52;
-const SUNDAY_Y = 66;
-const ROW_TOP = 82;
+const SUNDAY_Y = 20;
+const ROW_TOP = 38;
 const ROW_GAP = 8;
-const LINE_TOP = 78;
-const LINE_BOT = 126;
-const TOTAL_Y = 142;
-const FRAME_TOP = 44;
-const FRAME_BOT = 150;
-const LEGEND_X = 26;
-const REST_Y = 102; // where the bead lands for a silent month
+const LINE_TOP = 34;
+const LINE_BOT = 82;
+const FRAME_TOP = 12;
+const FRAME_BOT = 90;
+const REST_Y = 58; // where the bead lands for a silent month
 
 const FONT = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 
@@ -114,8 +110,7 @@ function quadLen(ax, ay, cx, cy, bx, by, n = 16) {
 
 export function renderChords(shaped, theme) {
   const p = PALETTES[theme] || PALETTES.dark;
-  const { months, totalContributions, homeIndex } = shaped;
-  const homeLabel = homeIndex >= 0 && months[homeIndex] ? months[homeIndex].label : '—';
+  const { months, homeIndex } = shaped;
 
   // --- landing point of the pick for each month (traces the melodic contour) ---
   const pts = months.map((m, i) => {
@@ -182,24 +177,6 @@ export function renderChords(shaped, theme) {
   // background
   parts.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="${p.bg}"/>`);
 
-  // title
-  parts.push(
-    `<text x="${X0}" y="${TITLE_Y}" font-family="${FONT}" font-size="11" letter-spacing="2.5" fill="${p.ink}" fill-opacity="${p.labelOpacity}">A YEAR IN TWELVE CHORDS</text>`
-  );
-  parts.push(
-    `<text x="${W - 8}" y="${TITLE_Y}" text-anchor="end" font-family="${FONT}" font-size="9" fill="${p.ink}" fill-opacity="${p.subOpacity}">${esc(
-      totalContributions.toLocaleString('en-US')
-    )} total · home chord: ${esc(homeLabel)}</text>`
-  );
-
-  // left legend (once)
-  ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].forEach((lab, k) => {
-    const y = (k === 0 ? SUNDAY_Y : rowY(k - 1)) + 2.4;
-    parts.push(
-      `<text x="${LEGEND_X}" y="${y}" text-anchor="end" font-family="${FONT}" font-size="7" fill="${p.ink}" fill-opacity="0.5">${lab}</text>`
-    );
-  });
-
   // printed melody staff (the whole year's contour, pre-printed like real sheet music)
   const staffD = arcs.map((s) => s.d).join('');
   if (staffD) {
@@ -225,9 +202,7 @@ export function renderChords(shaped, theme) {
   // ---- boxes ----
   months.forEach((m, i) => {
     const L = boxLeft(i);
-    const cx = L + BOX_W / 2;
     const isHome = i === homeIndex;
-    const empty = m.total <= 0;
     const T = A(i);
     const g = [];
 
@@ -244,11 +219,6 @@ export function renderChords(shaped, theme) {
           `</rect>`
       );
     }
-
-    // month label
-    g.push(
-      `<text x="${cx}" y="${MONTH_LABEL_Y}" text-anchor="middle" font-family="${FONT}" font-size="9" fill="${p.ink}" fill-opacity="${p.labelOpacity}">${esc(m.label)}</text>`
-    );
 
     // strings (static frame) + sympathetic shimmer where a neighbour's root shares the row
     const slines = [];
@@ -331,22 +301,6 @@ export function renderChords(shaped, theme) {
     }
     if (dots.length || rootRing) {
       g.push(`<g fill="${p.ink}">${dots.join('')}${rootRing}</g>`);
-    }
-
-    // monthly total (home: number + a swaying ◆)
-    g.push(
-      `<text x="${cx}" y="${TOTAL_Y}" text-anchor="middle" font-family="${FONT}" font-size="8.5" fill="${p.ink}" fill-opacity="${p.subOpacity}">${
-        empty ? 'N.C.' : esc(m.total.toLocaleString('en-US'))
-      }</text>`
-    );
-    if (isHome && !empty) {
-      const dx = cx + String(m.total).length * 2.6 + 6;
-      g.push(
-        `<g transform="translate(${r1(dx)} ${TOTAL_Y - 3})"><g><path d="M0 -3.2L3.2 0L0 3.2L-3.2 0Z" fill="${p.accent}"/>` +
-          `<animateTransform attributeName="transform" type="scale" dur="${PERIOD}s" repeatCount="indefinite" calcMode="linear" keyTimes="0;${f(T)};${r4((f(T) + f(T + FERM)) / 2)};${f(T + FERM)};1" values="1;1;1.28;1;1" additive="sum" fill="freeze"/>` +
-          `<animateTransform attributeName="transform" type="rotate" dur="${PERIOD}s" repeatCount="indefinite" calcMode="linear" keyTimes="0;${f(T)};${r4(f(T) + (f(T + FERM) - f(T)) * 0.33)};${r4(f(T) + (f(T + FERM) - f(T)) * 0.66)};${f(T + FERM)};1" values="0;0;8;-8;0;0" additive="sum" fill="freeze"/>` +
-          `</g></g>`
-      );
     }
 
     parts.push(`<g>${g.join('')}</g>`);
