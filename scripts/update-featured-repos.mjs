@@ -220,14 +220,15 @@ function imageMagick() {
 const IM = imageMagick();
 const IM_OPTIONS = {
   stdio: "pipe",
-  timeout: 30_000,
+  timeout: 90_000,
   maxBuffer: 64 * 1024 * 1024,
   env: {
     ...imageProcessEnv,
-    MAGICK_MEMORY_LIMIT: "256MiB",
-    MAGICK_MAP_LIMIT: "512MiB",
-    MAGICK_DISK_LIMIT: "1GiB",
-    MAGICK_TIME_LIMIT: "30",
+    MAGICK_MEMORY_LIMIT: "768MiB",
+    MAGICK_MAP_LIMIT: "2GiB",
+    MAGICK_DISK_LIMIT: "4GiB",
+    MAGICK_THREAD_LIMIT: "2",
+    MAGICK_TIME_LIMIT: "90",
   },
 };
 // Rendered at 2x the on-card 328x164 box for crisp display.
@@ -270,6 +271,9 @@ function plausibleHero(bytes, r) {
       Number.isFinite(aspect) &&
       width >= 320 &&
       height >= 120 &&
+      width <= 4_000 &&
+      height <= 2_500 &&
+      width * height <= 10_000_000 &&
       aspect >= 1.25 &&
       aspect <= 3.2;
     if (!plausible) {
@@ -348,29 +352,62 @@ async function heroImageData(r) {
           .split("\n")
           .map((d) => parseInt(d, 10) || 6);
 
-        // Coalesce composites the delta-patch frames into full images.
-        execFileSync(
-          IM,
-          [tmp, "-coalesce", ...resizeArgs, "-quality", "80", path.join(frameDir, "f-%04d.jpg")],
-          IM_OPTIONS,
+        const normalizedDelays = Array.from(
+          { length: frameCount },
+          (_, i) => delays[i] || 6,
         );
-        const all = fs.readdirSync(frameDir).sort();
-        const n = Math.min(MAX_FLIP_FRAMES, all.length);
-        const normalizedDelays = all.map((_, i) => delays[i] || 6);
         const totalDelay = normalizedDelays.reduce((a, b) => a + b, 0);
         const cycleSec = totalDelay / 100;
         const cumulative = [];
-        normalizedDelays.reduce((sum, delay, i) => (cumulative[i] = sum + delay), 0);
-        const picked = Array.from({ length: n }, (_, i) => {
+        normalizedDelays.reduce(
+          (sum, delay, i) => (cumulative[i] = sum + delay),
+          0,
+        );
+        const n = Math.min(MAX_FLIP_FRAMES, frameCount);
+        const pickedIndices = Array.from({ length: n }, (_, i) => {
           const target = (i * totalDelay) / n;
           const frame = cumulative.findIndex((end) => end > target);
-          return all[frame === -1 ? all.length - 1 : frame];
+          return frame === -1 ? frameCount - 1 : frame;
         });
-        const frames = picked.map((f) =>
-          fs.readFileSync(path.join(frameDir, f)).toString("base64"),
+        const uniqueIndices = [...new Set(pickedIndices)].sort((a, b) => a - b);
+        const keep = new Set(uniqueIndices);
+        const deleteIndices = Array.from(
+          { length: frameCount },
+          (_, i) => i,
+        ).filter((i) => !keep.has(i));
+
+        // Coalesce composites the delta-patch frames into full images. Delete
+        // unsampled frames before resizing/encoding so large GIFs remain bounded.
+        execFileSync(
+          IM,
+          [
+            tmp,
+            "-coalesce",
+            ...(deleteIndices.length
+              ? ["-delete", deleteIndices.join(",")]
+              : []),
+            ...resizeArgs,
+            "-quality", "80",
+            path.join(frameDir, "f-%04d.jpg"),
+          ],
+          IM_OPTIONS,
+        );
+        const all = fs.readdirSync(frameDir).sort();
+        if (all.length !== uniqueIndices.length) {
+          throw new Error(
+            `expected ${uniqueIndices.length} sampled frames, found ${all.length}`,
+          );
+        }
+        const filesBySourceIndex = new Map(
+          uniqueIndices.map((sourceIndex, i) => [sourceIndex, all[i]]),
+        );
+        const frames = pickedIndices.map((sourceIndex) =>
+          fs.readFileSync(
+            path.join(frameDir, filesBySourceIndex.get(sourceIndex)),
+          ).toString("base64"),
         );
         console.log(
-          `flipbook for ${r.name}: ${n}/${all.length} frames, ${cycleSec.toFixed(1)}s cycle, via ${IM}`,
+          `flipbook for ${r.name}: ${n}/${frameCount} frames, ${cycleSec.toFixed(1)}s cycle, via ${IM}`,
         );
         return { kind: "anim", mime: "image/jpeg", frames, cycleSec };
       }
