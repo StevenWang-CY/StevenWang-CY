@@ -40,27 +40,37 @@ jobs:
           for f in dist/github-contribution-grid-snake.svg dist/github-contribution-grid-snake-dark.svg; do
             sudo python3 - "$f" <<'PY'
           from pathlib import Path
+          import re
           import sys
 
           path = Path(sys.argv[1])
           text = path.read_text()
-          old_bar = 'y="144"'
-          new_bar = 'y="132"'
+          stack_rect = re.compile(r'<rect class="u [^"]+"[^>]*/>')
           old_box = 'viewBox="-16 -32 880 192" width="880" height="192"'
           new_box = 'viewBox="-16 -32 880 194" width="880" height="194"'
 
-          if text.count(old_bar) != 1:
-              raise SystemExit(f"{path}: expected exactly one progress bar at y=144")
+          segments = stack_rect.findall(text)
+          if not segments:
+              raise SystemExit(f"{path}: contribution progress bar is missing")
+          if any(segment.count('y="144"') != 1 for segment in segments):
+              raise SystemExit(f"{path}: a progress-bar segment has unexpected geometry")
           if text.count(old_box) != 1:
               raise SystemExit(f"{path}: expected exactly one 880x192 viewBox")
 
-          updated = text.replace(old_bar, new_bar).replace(old_box, new_box)
-          if old_bar in updated or old_box in updated:
-              raise SystemExit(f"{path}: old geometry remains after replacement")
-          if updated.count(new_bar) != 1 or updated.count(new_box) != 1:
+          updated = stack_rect.sub(
+              lambda match: match.group(0).replace('y="144"', 'y="132"'),
+              text,
+          ).replace(old_box, new_box)
+          moved_segments = stack_rect.findall(updated)
+          if len(moved_segments) != len(segments):
+              raise SystemExit(f"{path}: progress-bar segment count changed")
+          if any(segment.count('y="132"') != 1 for segment in moved_segments):
+              raise SystemExit(f"{path}: a moved progress-bar segment has unexpected geometry")
+          if old_box in updated or updated.count(new_box) != 1:
               raise SystemExit(f"{path}: new geometry is not unique")
 
           path.write_text(updated)
+          print(f"{path}: moved {len(segments)} progress-bar segments to y=132")
           PY
           done
 
