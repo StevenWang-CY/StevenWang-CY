@@ -1,8 +1,9 @@
 // Regenerates the featured project section with one deliberately selected
 // repository: AutoPaperLab. Its card always uses the Studio Overview dashboard
 // from the repository README, then splices the linked card between the
-// FEATURED-REPOS markers in README.md. It also rotates cache keys on every
-// dynamic profile image once per UTC day so GitHub's image cache refreshes.
+// FEATURED-REPOS markers in README.md. It also generates repository-served
+// light/dark contribution statistics from GitHub's own annual calendars and
+// rotates cache keys on every dynamic profile image once per UTC day.
 //
 // SVG cards are used because GitHub sanitizes CSS out of README HTML:
 // fonts and absolute positioning only survive inside an <img>-embedded
@@ -39,6 +40,17 @@ const dailyCacheKey =
 if (!/^\d{8}$/.test(dailyCacheKey)) {
   throw new Error(`invalid PROFILE_CACHE_KEY: ${dailyCacheKey}`);
 }
+const cacheYear = Number(dailyCacheKey.slice(0, 4));
+const cacheMonth = Number(dailyCacheKey.slice(4, 6));
+const cacheDay = Number(dailyCacheKey.slice(6, 8));
+const profileDate = new Date(Date.UTC(cacheYear, cacheMonth - 1, cacheDay));
+if (
+  profileDate.getUTCFullYear() !== cacheYear ||
+  profileDate.getUTCMonth() !== cacheMonth - 1 ||
+  profileDate.getUTCDate() !== cacheDay
+) {
+  throw new Error(`invalid PROFILE_CACHE_KEY date: ${dailyCacheKey}`);
+}
 
 const FEATURED_PROJECTS = [
   {
@@ -63,6 +75,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 const FETCH_TIMEOUT_MS = 15_000;
 const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
+const MIN_EXPECTED_CONTRIBUTIONS = 2_000;
 const ALLOWED_IMAGE_TYPES = new Set([
   "image/gif",
   "image/jpeg",
@@ -311,6 +324,217 @@ function plausibleHero(bytes, r) {
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }
+}
+
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+function isoDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function displayDate(value) {
+  const [year, month, day] = value.split("-").map(Number);
+  return `${MONTH_NAMES[month - 1]} ${day}, ${year}`;
+}
+
+function displayRange(start, end) {
+  if (!start || !end) return "No active days";
+  return start === end ? displayDate(start) : `${displayDate(start)} – ${displayDate(end)}`;
+}
+
+function commaNumber(value) {
+  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+async function contributionStatsData() {
+  if (!token) {
+    throw new Error("GITHUB_TOKEN is required to update contribution statistics");
+  }
+
+  const accountResponse = await fetchWithRetry(
+    `https://api.github.com/users/${encodeURIComponent(userName)}`,
+    { headers: apiHeaders },
+  );
+  if (!accountResponse.ok) {
+    throw new Error(`GitHub user lookup ${accountResponse.status}: ${await accountResponse.text()}`);
+  }
+  const account = await accountResponse.json();
+  if (
+    account.login?.toLowerCase() !== userName.toLowerCase() ||
+    !/^\d{4}-\d{2}-\d{2}T/.test(account.created_at ?? "")
+  ) {
+    throw new Error("GitHub returned unexpected account metadata");
+  }
+  const firstYear = new Date(account.created_at).getUTCFullYear();
+  const lastYear = profileDate.getUTCFullYear();
+  const years = Array.from(
+    { length: lastYear - firstYear + 1 },
+    (_, index) => firstYear + index,
+  );
+  if (years.length < 1 || years.length > 100) {
+    throw new Error(`unexpected GitHub account age: ${years.length} years`);
+  }
+  const query = `
+    query ProfileContributionStats($login: String!, $from: DateTime!, $to: DateTime!) {
+      user(login: $login) {
+        login
+        contributionsCollection(from: $from, to: $to) {
+          contributionCalendar {
+            totalContributions
+            weeks {
+              contributionDays {
+                contributionCount
+                date
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+  const calendars = await Promise.all(
+    years.map(async (year) => {
+      const from = `${year}-01-01T00:00:00Z`;
+      const toDate = year === lastYear ? isoDate(profileDate) : `${year}-12-31`;
+      const to = `${toDate}T23:59:59Z`;
+      const response = await fetchWithRetry("https://api.github.com/graphql", {
+        method: "POST",
+        headers: { ...apiHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ query, variables: { login: userName, from, to } }),
+      });
+      if (!response.ok) {
+        throw new Error(
+          `GitHub GraphQL ${response.status} for ${year}: ${await response.text()}`,
+        );
+      }
+      const payload = await response.json();
+      if (payload.errors?.length) {
+        throw new Error(
+          `GitHub GraphQL contribution query failed for ${year}: ${payload.errors.map((e) => e.message).join("; ")}`,
+        );
+      }
+      const user = payload.data?.user;
+      const calendar = user?.contributionsCollection?.contributionCalendar;
+      if (user?.login?.toLowerCase() !== userName.toLowerCase() || !calendar) {
+        throw new Error(`GitHub GraphQL returned unexpected ${year} contribution data`);
+      }
+      if (
+        !Number.isSafeInteger(calendar.totalContributions) ||
+        calendar.totalContributions < 0
+      ) {
+        throw new Error(`GitHub GraphQL returned an invalid ${year} total`);
+      }
+      const annualDays =
+        calendar.weeks?.flatMap((week) => week.contributionDays ?? []) ?? [];
+      const expectedStartDate = `${year}-01-01`;
+      const expectedDayCount =
+        Math.round(
+          (Date.parse(`${toDate}T00:00:00Z`) -
+            Date.parse(`${expectedStartDate}T00:00:00Z`)) /
+            86_400_000,
+        ) + 1;
+      if (
+        annualDays.length !== expectedDayCount ||
+        annualDays[0]?.date !== expectedStartDate ||
+        annualDays.at(-1)?.date !== toDate
+      ) {
+        throw new Error(
+          `GitHub GraphQL returned a truncated ${year} calendar (${annualDays.length}/${expectedDayCount} days)`,
+        );
+      }
+      return calendar;
+    }),
+  );
+  const days = calendars
+    .flatMap((calendar) =>
+      calendar.weeks?.flatMap((week) => week.contributionDays ?? []) ?? [],
+    );
+  if (days.length < 1 || days.length > years.length * 366) {
+    throw new Error(`unexpected contribution-calendar length: ${days.length}`);
+  }
+  let previousDate = "";
+  for (const day of days) {
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(day.date) ||
+      !Number.isSafeInteger(day.contributionCount) ||
+      day.contributionCount < 0 ||
+      day.date > isoDate(profileDate) ||
+      (previousDate && day.date <= previousDate)
+    ) {
+      throw new Error("GitHub GraphQL returned malformed contribution days");
+    }
+    previousDate = day.date;
+  }
+  // Annual calendar totals include any restricted/private aggregate the
+  // profile owner elected to share. Per-day visibility can be narrower for a
+  // repository-scoped Actions token, so totals and day sums are deliberately
+  // validated independently rather than incorrectly requiring equality.
+  const totalContributions = calendars.reduce(
+    (sum, calendar) => sum + calendar.totalContributions,
+    0,
+  );
+  if (!Number.isSafeInteger(totalContributions)) {
+    throw new Error("GitHub contribution total exceeds the safe integer range");
+  }
+  if (totalContributions < MIN_EXPECTED_CONTRIBUTIONS) {
+    throw new Error(
+      `GitHub returned only ${totalContributions} total contributions; refusing to replace a known 2,000+ profile total`,
+    );
+  }
+
+  let currentEndIndex = days.length - 1;
+  if (days[currentEndIndex]?.contributionCount === 0) currentEndIndex -= 1;
+  let currentStartIndex = currentEndIndex;
+  while (
+    currentStartIndex >= 0 &&
+    days[currentStartIndex].contributionCount > 0
+  ) {
+    currentStartIndex -= 1;
+  }
+  currentStartIndex += 1;
+  const currentStreak = Math.max(0, currentEndIndex - currentStartIndex + 1);
+
+  let longestStreak = 0;
+  let longestStartIndex = -1;
+  let longestEndIndex = -1;
+  let runStartIndex = -1;
+  for (let i = 0; i < days.length; i += 1) {
+    if (days[i].contributionCount > 0) {
+      if (runStartIndex === -1) runStartIndex = i;
+      const runLength = i - runStartIndex + 1;
+      if (runLength > longestStreak) {
+        longestStreak = runLength;
+        longestStartIndex = runStartIndex;
+        longestEndIndex = i;
+      }
+    } else {
+      runStartIndex = -1;
+    }
+  }
+
+  const firstActiveDay = days.find((day) => day.contributionCount > 0)?.date;
+  const stats = {
+    total: totalContributions,
+    period: firstActiveDay ? `Since ${displayDate(firstActiveDay)}` : "No contributions yet",
+    currentStreak,
+    currentRange: displayRange(
+      currentStreak ? days[currentStartIndex].date : null,
+      currentStreak ? days[currentEndIndex].date : null,
+    ),
+    longestStreak,
+    longestRange: displayRange(
+      longestStreak ? days[longestStartIndex].date : null,
+      longestStreak ? days[longestEndIndex].date : null,
+    ),
+    recentCounts: days.slice(-28).map((day) => day.contributionCount),
+  };
+  console.log(
+    `contribution stats: ${commaNumber(stats.total)} total, ${stats.currentStreak}-day current streak, ${stats.longestStreak}-day longest streak`,
+  );
+  return stats;
 }
 
 async function requiredHeroImageData(r) {
@@ -651,13 +875,123 @@ ${imagePart}
 `;
 }
 
+function contributionStatsSvg(stats, dark) {
+  const palette = dark
+    ? {
+        background: "#161b22",
+        border: "#3d444d",
+        text: "#e6edf3",
+        muted: "#9198a1",
+        divider: "#30363d",
+        blue: "#58a6ff",
+        orange: "#fb923c",
+        green: "#3fb950",
+        quietBar: "#30363d",
+      }
+    : {
+        background: "#ffffff",
+        border: "#d1d9e0",
+        text: "#24292f",
+        muted: "#59636e",
+        divider: "#d8dee4",
+        blue: "#0969da",
+        orange: "#d15704",
+        green: "#1a7f37",
+        quietBar: "#eaeef2",
+      };
+  const metrics = [
+    {
+      x: 141,
+      value: commaNumber(stats.total),
+      label: "Total contributions",
+      range: stats.period,
+      color: palette.blue,
+    },
+    {
+      x: 423,
+      value: String(stats.currentStreak),
+      label: "Current streak",
+      range: stats.currentRange,
+      color: palette.orange,
+    },
+    {
+      x: 705,
+      value: String(stats.longestStreak),
+      label: "Longest streak",
+      range: stats.longestRange,
+      color: palette.green,
+    },
+  ];
+  const metricMarkup = metrics
+    .map(
+      (metric) => `  <circle cx="${metric.x}" cy="75" r="31" fill="${metric.color}" opacity="0.09"/>
+  <text class="value" x="${metric.x}" y="85" text-anchor="middle" fill="${metric.color}">${esc(metric.value)}</text>
+  <text class="label" x="${metric.x}" y="116" text-anchor="middle">${esc(metric.label)}</text>
+  <text class="range" x="${metric.x}" y="137" text-anchor="middle">${esc(metric.range)}</text>`,
+    )
+    .join("\n");
+  const maxRecent = Math.max(1, ...stats.recentCounts);
+  const recentBars = stats.recentCounts
+    .map((count, index) => {
+      const height = count === 0 ? 2 : 3 + Math.round(13 * Math.sqrt(count / maxRecent));
+      const x = 286 + index * 19;
+      const y = 171 - height;
+      const fill = count === 0 ? palette.quietBar : palette.green;
+      const opacity = count === 0 ? 1 : 0.35 + 0.65 * Math.sqrt(count / maxRecent);
+      return `  <rect x="${x}" y="${y}" width="11" height="${height}" rx="2" fill="${fill}" opacity="${opacity.toFixed(3)}"/>`;
+    })
+    .join("\n");
+  const description = [
+    `${userName} contribution rhythm.`,
+    `${commaNumber(stats.total)} total contributions.`,
+    `${stats.currentStreak}-day current streak.`,
+    `${stats.longestStreak}-day longest streak.`,
+  ].join(" ");
+
+  return `<svg width="846" height="184" viewBox="0 0 846 184" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Contribution rhythm</title>
+  <desc>${esc(description)}</desc>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .heading { fill: ${palette.text}; font-size: 14px; font-weight: 700; letter-spacing: .2px; }
+    .period { fill: ${palette.muted}; font-size: 12px; }
+    .value { font: 700 28px Cambria, Georgia, 'Times New Roman', serif; }
+    .label { fill: ${palette.text}; font-size: 13px; font-weight: 650; }
+    .range { fill: ${palette.muted}; font-size: 11px; }
+    .recent { fill: ${palette.muted}; font-size: 11px; font-weight: 600; letter-spacing: .15px; }
+  </style>
+  <rect x="0.5" y="0.5" width="845" height="183" rx="8" fill="${palette.background}" stroke="${palette.border}"/>
+  <text class="heading" x="28" y="29">Contribution rhythm</text>
+  <text class="period" x="818" y="29" text-anchor="end">Updated daily from GitHub</text>
+  <path d="M28 43.5H818" stroke="${palette.divider}"/>
+  <path d="M282 57V139M564 57V139" stroke="${palette.divider}"/>
+${metricMarkup}
+  <text class="recent" x="28" y="166">LAST 28 DAYS</text>
+${recentBars}
+</svg>
+`;
+}
+
 // ---------------------------------------------------------------------------
 // Write assets and splice the README block.
 // ---------------------------------------------------------------------------
 
 fs.mkdirSync(assetsDir, { recursive: true });
 
-const images = await Promise.all(featuredRepos.map(heroImageData));
+const [images, contributionStats] = await Promise.all([
+  Promise.all(featuredRepos.map(heroImageData)),
+  contributionStatsData(),
+]);
+
+for (const variant of ["light", "dark"]) {
+  const relativeFile = `assets/contribution-stats-${variant}.svg`;
+  const file = path.join(repoRoot, relativeFile);
+  const svg = contributionStatsSvg(contributionStats, variant === "dark");
+  if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== svg) {
+    writeFileAtomic(file, svg);
+    console.log(`wrote ${relativeFile}`);
+  }
+}
 
 const anchors = featuredRepos.map((r, i) => {
   const relativeFile = `assets/featured-${i}.svg`;
@@ -703,8 +1037,39 @@ if (
 const featuredUpdated =
   readme.slice(0, start + START.length) + "\n" + block + "\n" + readme.slice(end);
 
+const statsAlt = [
+  `Chuyue “Steven” Wang’s contribution rhythm`,
+  `${commaNumber(contributionStats.total)} total contributions`,
+  `${contributionStats.currentStreak}-day current streak`,
+  `${contributionStats.longestStreak}-day longest streak`,
+].join(" — ");
+const statsBlock = `<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/${userName}/${userName}/main/assets/contribution-stats-dark.svg" />
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/${userName}/${userName}/main/assets/contribution-stats-light.svg" />
+  <img alt="${escAttr(statsAlt)}" src="https://raw.githubusercontent.com/${userName}/${userName}/main/assets/contribution-stats-light.svg" width="846" />
+</picture>`;
+const STATS_START = "<!-- CONTRIBUTION-STATS:START -->";
+const STATS_END = "<!-- CONTRIBUTION-STATS:END -->";
+const statsStart = featuredUpdated.indexOf(STATS_START);
+const statsEnd = featuredUpdated.indexOf(STATS_END);
+if (
+  statsStart === -1 ||
+  statsEnd === -1 ||
+  statsEnd < statsStart ||
+  statsStart !== featuredUpdated.lastIndexOf(STATS_START) ||
+  statsEnd !== featuredUpdated.lastIndexOf(STATS_END)
+) {
+  throw new Error("CONTRIBUTION-STATS markers are missing, duplicated, or out of order");
+}
+const statsUpdated =
+  featuredUpdated.slice(0, statsStart + STATS_START.length) +
+  "\n" +
+  statsBlock +
+  "\n" +
+  featuredUpdated.slice(statsEnd);
+
 let refreshedUrlCount = 0;
-const updated = featuredUpdated.replace(/https:\/\/[^"'\s>]+/g, (match) => {
+const updated = statsUpdated.replace(/https:\/\/[^"'\s>]+/g, (match) => {
   const url = new URL(match);
   const isSnake =
     url.hostname === "raw.githubusercontent.com" &&
@@ -713,8 +1078,13 @@ const updated = featuredUpdated.replace(/https:\/\/[^"'\s>]+/g, (match) => {
   const isFeaturedCard =
     url.hostname === "raw.githubusercontent.com" &&
     url.pathname === `/${userName}/${userName}/main/assets/featured-0.svg`;
-  const isStreak = url.hostname === "streak-stats.demolab.com";
-  if (!isSnake && !isFeaturedCard && !isStreak) return match;
+  const isContributionStats =
+    url.hostname === "raw.githubusercontent.com" &&
+    url.pathname.startsWith(
+      `/${userName}/${userName}/main/assets/contribution-stats-`,
+    ) &&
+    url.pathname.endsWith(".svg");
+  if (!isSnake && !isFeaturedCard && !isContributionStats) return match;
   url.searchParams.set("v", dailyCacheKey);
   refreshedUrlCount += 1;
   return url.toString();
