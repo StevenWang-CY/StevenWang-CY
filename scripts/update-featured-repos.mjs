@@ -20,6 +20,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadPublicContributions } from "./public-contributions.mjs";
 
 const [, , userName] = process.argv;
 
@@ -37,7 +38,7 @@ const readmeFile = path.join(repoRoot, "README.md");
 // The date changes the rendered URLs daily; the revision changes whenever the
 // image contract changes so GitHub's image proxy cannot retain an older design
 // under today's already-seen URL.
-const CACHE_REVISION = "r2";
+const CACHE_REVISION = "r3";
 const dailyCacheKey =
   process.env.PROFILE_CACHE_KEY ??
   `${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${CACHE_REVISION}`;
@@ -79,14 +80,6 @@ const apiHeaders = {
   "X-GitHub-Api-Version": "2022-11-28",
   ...(token ? { Authorization: `Bearer ${token}` } : {}),
 };
-// Contribution days must match what a visitor can see on the public profile.
-// Never attach the caller's token here: an owner token can expose private-day
-// activity and silently produce different streaks from GitHub Actions.
-const publicContributionHeaders = {
-  "User-Agent": userName,
-  Accept: "text/html",
-};
-
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 const FETCH_TIMEOUT_MS = 15_000;
@@ -382,164 +375,16 @@ function commaNumber(value) {
   return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-function htmlAttribute(fragment, name) {
-  const match = new RegExp(`(?:^|\\s)${name}\\s*=\\s*(["'])(.*?)\\1`, "is").exec(
-    fragment,
-  );
-  return match?.[2] ?? null;
-}
-
-function parsePublicContributionCalendar(html, year) {
-  if (
-    !html.includes(`data-graph-url="/users/${userName}/contributions"`)
-  ) {
-    throw new Error(`GitHub returned an unexpected ${year} public contribution page`);
-  }
-  const heading =
-    /<h2\b[^>]*\bid=["']js-contribution-activity-description["'][^>]*>\s*([\d,]+)\s+contributions?\b/is.exec(
-      html,
-    );
-  const totalContributions = Number(heading?.[1]?.replaceAll(",", ""));
-  if (!Number.isSafeInteger(totalContributions) || totalContributions < 0) {
-    throw new Error(`GitHub returned an invalid ${year} public contribution total`);
-  }
-
-  const byDate = new Map();
-  const blockPattern =
-    /<td\b([^>]*)>\s*<\/td>\s*<tool-tip\b([^>]*)>([^<]*)<\/tool-tip>/gis;
-  let block;
-  while ((block = blockPattern.exec(html)) !== null) {
-    const cellAttributes = block[1];
-    const className = htmlAttribute(cellAttributes, "class") ?? "";
-    if (!className.split(/\s+/).includes("ContributionCalendar-day")) continue;
-
-    const date = htmlAttribute(cellAttributes, "data-date");
-    const cellId = htmlAttribute(cellAttributes, "id");
-    const tooltipFor = htmlAttribute(block[2], "for");
-    const tooltip = block[3].trim().replace(/\s+/g, " ");
-    const countMatch = /^([\d,]+) contributions? on\b/i.exec(tooltip);
-    const contributionCount = /^No contributions on\b/i.test(tooltip)
-      ? 0
-      : Number(countMatch?.[1]?.replaceAll(",", ""));
-    if (
-      !/^\d{4}-\d{2}-\d{2}$/.test(date ?? "") ||
-      !cellId ||
-      tooltipFor !== cellId ||
-      !Number.isSafeInteger(contributionCount) ||
-      contributionCount < 0 ||
-      byDate.has(date)
-    ) {
-      throw new Error(`GitHub returned a malformed ${year} public contribution day`);
-    }
-    byDate.set(date, contributionCount);
-  }
-
-  const expectedStart = new Date(Date.UTC(year, 0, 1));
-  const expectedEnd = new Date(Date.UTC(year + 1, 0, 1));
-  const expectedDayCount = Math.round((expectedEnd - expectedStart) / 86_400_000);
-  const days = [...byDate]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([date, contributionCount]) => ({ date, contributionCount }));
-  if (days.length !== expectedDayCount) {
-    throw new Error(
-      `GitHub returned a truncated ${year} public calendar (${days.length}/${expectedDayCount} days)`,
-    );
-  }
-  for (let index = 0; index < days.length; index += 1) {
-    const expectedDate = new Date(expectedStart.getTime() + index * 86_400_000);
-    if (days[index].date !== isoDate(expectedDate)) {
-      throw new Error(`GitHub returned a non-contiguous ${year} public calendar`);
-    }
-  }
-  const dayTotal = days.reduce((sum, day) => sum + day.contributionCount, 0);
-  if (dayTotal !== totalContributions) {
-    throw new Error(
-      `GitHub public ${year} total/day mismatch (${totalContributions}/${dayTotal})`,
-    );
-  }
-  return { totalContributions, days };
-}
-
 async function contributionStatsData() {
   if (!token) {
     throw new Error("GITHUB_TOKEN is required to update contribution statistics");
   }
-
-  const accountResponse = await fetchWithRetry(
-    `https://api.github.com/users/${encodeURIComponent(userName)}`,
-    { headers: apiHeaders },
-  );
-  if (!accountResponse.ok) {
-    throw new Error(`GitHub user lookup ${accountResponse.status}: ${await accountResponse.text()}`);
-  }
-  const account = await accountResponse.json();
-  if (
-    account.login?.toLowerCase() !== userName.toLowerCase() ||
-    !/^\d{4}-\d{2}-\d{2}T/.test(account.created_at ?? "")
-  ) {
-    throw new Error("GitHub returned unexpected account metadata");
-  }
-  const firstYear = new Date(account.created_at).getUTCFullYear();
-  const lastYear = profileDate.getUTCFullYear();
-  const years = Array.from(
-    { length: lastYear - firstYear + 1 },
-    (_, index) => firstYear + index,
-  );
-  if (years.length < 1 || years.length > 100) {
-    throw new Error(`unexpected GitHub account age: ${years.length} years`);
-  }
-  const calendars = await Promise.all(
-    years.map(async (year) => {
-      const from = `${year}-01-01`;
-      const toDate = year === lastYear ? isoDate(profileDate) : `${year}-12-31`;
-      const url =
-        `https://github.com/users/${encodeURIComponent(userName)}/contributions` +
-        `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(toDate)}`;
-      const response = await fetchWithRetry(url, {
-        headers: publicContributionHeaders,
-      });
-      if (!response.ok) {
-        throw new Error(
-          `GitHub public contribution calendar ${response.status} for ${year}`,
-        );
-      }
-      const contentType = response.headers.get("content-type") ?? "";
-      if (!contentType.toLowerCase().startsWith("text/html")) {
-        throw new Error(`GitHub returned unexpected ${year} calendar content type`);
-      }
-      const html = (await readBodyLimited(response, 2 * 1024 * 1024)).toString("utf8");
-      return parsePublicContributionCalendar(html, year);
-    }),
-  );
-  const days = calendars
-    .flatMap((calendar) => calendar.days)
-    .filter((day) => day.date <= isoDate(profileDate));
-  if (days.length < 1 || days.length > years.length * 366) {
-    throw new Error(`unexpected contribution-calendar length: ${days.length}`);
-  }
-  let previousDate = "";
-  for (const day of days) {
-    if (
-      !/^\d{4}-\d{2}-\d{2}$/.test(day.date) ||
-      !Number.isSafeInteger(day.contributionCount) ||
-      day.contributionCount < 0 ||
-      day.date > isoDate(profileDate) ||
-      (previousDate && day.date <= previousDate)
-    ) {
-      throw new Error("GitHub returned malformed public contribution days");
-    }
-    previousDate = day.date;
-  }
-  // GitHub's fragment endpoint serves the live full-year calendar even when
-  // `to` names an earlier day. Sum the already filtered days so a job crossing
-  // UTC midnight keeps its total and streaks on the same pinned profile date.
-  const totalContributions = days.reduce(
-    (sum, day) => sum + day.contributionCount,
-    0,
-  );
-  if (!Number.isSafeInteger(totalContributions)) {
-    throw new Error("GitHub contribution total exceeds the safe integer range");
-  }
+  const { days, totalContributions } = await loadPublicContributions({
+    userName,
+    profileDate,
+    token,
+    snapshotPath: process.env.PUBLIC_CONTRIBUTIONS_SNAPSHOT,
+  });
   if (totalContributions < MIN_EXPECTED_CONTRIBUTIONS) {
     throw new Error(
       `GitHub returned only ${totalContributions} total contributions; refusing to replace a known 2,000+ profile total`,
@@ -1141,8 +986,19 @@ const statsUpdated =
   "\n" +
   featuredUpdated.slice(statsEnd);
 
+const snakeAltPattern =
+  /alt="Chuyue “Steven” Wang’s GitHub contribution graph, animated as a snake(?: with a synchronized contribution counter)?"/g;
+const snakeAltMatches = statsUpdated.match(snakeAltPattern) ?? [];
+if (snakeAltMatches.length !== 1) {
+  throw new Error(`expected one contribution-snake alt label, found ${snakeAltMatches.length}`);
+}
+const snakeUpdated = statsUpdated.replace(
+  snakeAltPattern,
+  'alt="Chuyue “Steven” Wang’s GitHub contribution graph, animated as a snake with a synchronized contribution counter"',
+);
+
 let refreshedUrlCount = 0;
-const updated = statsUpdated.replace(/https:\/\/[^"'\s>]+/g, (match) => {
+const updated = snakeUpdated.replace(/https:\/\/[^"'\s>]+/g, (match) => {
   const url = new URL(match);
   const isSnake =
     url.hostname === "raw.githubusercontent.com" &&

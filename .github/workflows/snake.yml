@@ -21,7 +21,27 @@ jobs:
       contents: read
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    outputs:
+      profile-cache-key: ${{ steps.cache-key.outputs.profile-cache-key }}
     steps:
+      - name: check out counter postprocessor without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+
+      - name: capture generation date
+        id: generation-date
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'profile-date=%s\n' "$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
       - name: generate light and dark contribution snakes
         uses: Platane/snk@d8f6715049803e982ee5ff501b6b9b7d5deeb09b # v3.5.0
         with:
@@ -30,55 +50,61 @@ jobs:
             dist/github-contribution-grid-snake.svg
             dist/github-contribution-grid-snake-dark.svg?palette=github-dark
 
-      # Keep the reference layout exactly: grid bottom y=110, bar y=132
-      # (22px gap), and 18px of canvas below the bar. GitHub adds its own
-      # 16px paragraph margin, producing a 34px bar-to-card gap.
-      - name: adjust and verify progress-bar geometry
+      - name: pin generated date and detect UTC rollover
+        id: cache-key
         shell: bash
+        env:
+          GENERATION_START_DATE: ${{ steps.generation-date.outputs.profile-date }}
         run: |
           set -euo pipefail
-          for f in dist/github-contribution-grid-snake.svg dist/github-contribution-grid-snake-dark.svg; do
-            sudo python3 - "$f" <<'PY'
-          from pathlib import Path
-          import re
-          import sys
+          profile_date="$(date -u +%Y%m%d)"
+          rerun_snake=false
+          if [[ "$profile_date" != "$GENERATION_START_DATE" ]]; then
+            rerun_snake=true
+          fi
+          profile_cache_key="${profile_date}-r3"
+          printf 'PROFILE_CACHE_KEY=%s\n' "$profile_cache_key" >> "$GITHUB_ENV"
+          printf 'profile-cache-key=%s\n' "$profile_cache_key" >> "$GITHUB_OUTPUT"
+          printf 'rerun-snake=%s\n' "$rerun_snake" >> "$GITHUB_OUTPUT"
 
-          path = Path(sys.argv[1])
-          text = path.read_text()
-          stack_rect = re.compile(r'<rect class="u [^"]+"[^>]*/>')
-          old_box = 'viewBox="-16 -32 880 192" width="880" height="192"'
-          new_box = 'viewBox="-16 -32 880 194" width="880" height="194"'
+      # If the first action straddled UTC midnight, replace its D graph with a
+      # fresh D+1 graph before attaching the explicitly date-bounded counter.
+      - name: regenerate snakes after UTC rollover
+        if: steps.cache-key.outputs.rerun-snake == 'true'
+        uses: Platane/snk@d8f6715049803e982ee5ff501b6b9b7d5deeb09b # v3.5.0
+        with:
+          github_user_name: ${{ github.repository_owner }}
+          outputs: |
+            dist/github-contribution-grid-snake.svg
+            dist/github-contribution-grid-snake-dark.svg?palette=github-dark
 
-          segments = stack_rect.findall(text)
-          if not segments:
-              raise SystemExit(f"{path}: contribution progress bar is missing")
-          if any(segment.count('y="144"') != 1 for segment in segments):
-              raise SystemExit(f"{path}: a progress-bar segment has unexpected geometry")
-          if text.count(old_box) != 1:
-              raise SystemExit(f"{path}: expected exactly one 880x192 viewBox")
-
-          updated = stack_rect.sub(
-              lambda match: match.group(0).replace('y="144"', 'y="132"'),
-              text,
-          ).replace(old_box, new_box)
-          moved_segments = stack_rect.findall(updated)
-          if len(moved_segments) != len(segments):
-              raise SystemExit(f"{path}: progress-bar segment count changed")
-          if any(segment.count('y="132"') != 1 for segment in moved_segments):
-              raise SystemExit(f"{path}: a moved progress-bar segment has unexpected geometry")
-          if old_box in updated or updated.count(new_box) != 1:
-              raise SystemExit(f"{path}: new geometry is not unique")
-
-          path.write_text(updated)
-          print(f"{path}: moved {len(segments)} progress-bar segments to y=132")
-          PY
-          done
+      # Keep the reference layout exactly (bar y=132), then add a clipped
+      # counter whose step changes reuse each swallowed cell's own keyframe.
+      - name: add synchronized public contribution counter
+        run: >-
+          node scripts/enhance-snake.mjs
+          "$PROFILE_OWNER"
+          "$PROFILE_CACHE_KEY"
+          dist/profile-contributions.json
+          dist/github-contribution-grid-snake.svg
+          dist/github-contribution-grid-snake-dark.svg
+        env:
+          PROFILE_OWNER: ${{ github.repository_owner }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: stage snake artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: contribution-snake
           path: dist/*.svg
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: stage shared public-contribution snapshot
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: public-contributions
+          path: dist/profile-contributions.json
           if-no-files-found: error
           retention-days: 1
 
@@ -102,10 +128,161 @@ jobs:
           test -f dist/github-contribution-grid-snake.svg
           test -f dist/github-contribution-grid-snake-dark.svg
           test "$(find dist -type f | wc -l | tr -d ' ')" = "2"
-          grep -Fq 'y="132"' dist/github-contribution-grid-snake.svg
-          grep -Fq 'height="194"' dist/github-contribution-grid-snake.svg
-          grep -Fq 'y="132"' dist/github-contribution-grid-snake-dark.svg
-          grep -Fq 'height="194"' dist/github-contribution-grid-snake-dark.svg
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+
+          allowed_tags = {
+              "svg", "desc", "style", "rect", "defs", "clipPath", "g", "text",
+          }
+          expected_refs = {"#snake-counter-window"}
+          signatures = []
+          for variant in ("light", "dark"):
+              path = Path(f"dist/github-contribution-grid-snake{'-dark' if variant == 'dark' else ''}.svg")
+              raw = path.read_text(encoding="utf8")
+              if len(raw.encode()) > 256 * 1024:
+                  raise SystemExit(f"{path}: enhanced snake exceeds 256 KiB")
+              if re.search(
+                  r"<!DOCTYPE|<!ENTITY|<\s*(?:script|foreignObject|image|use|a|animate|set)\b|"
+                  r"\s+on[a-z]+\s*=|(?:href|xlink:href)\s*=|@import|javascript:|data:",
+                  raw,
+                  re.IGNORECASE,
+              ):
+                  raise SystemExit(f"{path}: unsafe SVG content")
+              root = ET.fromstring(raw)
+              local = lambda tag: tag.rsplit("}", 1)[-1]
+              if (
+                  local(root.tag) != "svg"
+                  or root.attrib.get("viewBox") != "-16 -32 880 194"
+                  or root.attrib.get("width") != "880"
+                  or root.attrib.get("height") != "194"
+              ):
+                  raise SystemExit(f"{path}: snake canvas geometry changed")
+              tags = [local(element.tag) for element in root.iter()]
+              if set(tags) - allowed_tags:
+                  raise SystemExit(f"{path}: unexpected SVG tags {set(tags) - allowed_tags}")
+              for element in root.iter():
+                  for name, value in element.attrib.items():
+                      attr = local(name).lower()
+                      if attr.startswith("on") or attr == "href":
+                          raise SystemExit(f"{path}: unsafe attribute {name}")
+                      if re.search(r"javascript:|data:", value, re.IGNORECASE):
+                          raise SystemExit(f"{path}: unsafe attribute value")
+              refs = set(re.findall(r"url\(([^)]+)\)", raw))
+              if refs != expected_refs:
+                  raise SystemExit(f"{path}: unexpected URL references {refs}")
+
+              counters = [
+                  element for element in root.iter()
+                  if element.attrib.get("id") == "snake-contribution-counter"
+              ]
+              if len(counters) != 1:
+                  raise SystemExit(f"{path}: synchronized counter is missing or duplicated")
+              counter = counters[0]
+              try:
+                  start = int(counter.attrib["data-start-total"])
+                  final = int(counter.attrib["data-final-total"])
+                  grid_total = int(counter.attrib["data-grid-total"])
+                  event_count = int(counter.attrib["data-event-count"])
+                  duration = int(counter.attrib["data-duration-ms"])
+              except (KeyError, ValueError) as error:
+                  raise SystemExit(f"{path}: invalid counter metadata") from error
+              if (
+                  start < 0 or final < 2_000 or grid_total < 1 or event_count < 1
+                  or duration < 1_000 or duration > 120_000 or duration % 100
+                  or start + grid_total != final
+              ):
+                  raise SystemExit(f"{path}: inconsistent counter metadata")
+
+              values = [
+                  element for element in counter.iter()
+                  if local(element.tag) == "text"
+                  and "snk-counter-value" in element.attrib.get("class", "").split()
+              ]
+              labels = [
+                  element for element in counter.iter()
+                  if local(element.tag) == "text"
+                  and element.attrib.get("class") == "snk-counter-label"
+              ]
+              if len(values) != event_count + 1 or len(labels) != 1:
+                  raise SystemExit(f"{path}: counter state structure changed")
+              if "contributions" != "".join(labels[0].itertext()).strip():
+                  raise SystemExit(f"{path}: counter uses an inaccurate label")
+
+              state_signature = []
+              previous_total = None
+              previous_at = -1.0
+              previous_step = -1
+              deltas = []
+              for index, value in enumerate(values):
+                  try:
+                      total = int(value.attrib["data-total"])
+                      delta = int(value.attrib["data-delta"])
+                      at_text = value.attrib["data-at"]
+                      at = float(at_text)
+                      step = int(value.attrib["data-step"])
+                  except (KeyError, ValueError) as error:
+                      raise SystemExit(f"{path}: malformed counter state") from error
+                  date = value.attrib.get("data-date", "")
+                  rendered = "".join(value.itertext()).strip().replace(",", "")
+                  if rendered != str(total):
+                      raise SystemExit(f"{path}: rendered counter total differs from metadata")
+                  if index == 0:
+                      if total != start or delta != 0 or date or at != 0 or step != 0:
+                          raise SystemExit(f"{path}: invalid baseline counter state")
+                  else:
+                      if (
+                          delta < 1 or total - previous_total != delta
+                          or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date)
+                          or at <= previous_at or at >= 100
+                          or step <= previous_step
+                      ):
+                          raise SystemExit(f"{path}: invalid per-day counter increment")
+                      deltas.append(delta)
+                      expected_frame = (
+                          f"{at_text}%{{transform:translateY(-{index * 18}px)}}"
+                      )
+                      if expected_frame not in raw:
+                          raise SystemExit(f"{path}: counter timing diverges from state {index}")
+                  state_signature.append((total, delta, date, at_text, step))
+                  previous_total = total
+                  previous_at = at
+                  previous_step = step
+              if previous_total != final or sum(deltas) != grid_total or not any(d > 1 for d in deltas):
+                  raise SystemExit(f"{path}: cumulative counter arithmetic is incomplete")
+
+              active_cells = [
+                  element for element in root.iter()
+                  if local(element.tag) == "rect"
+                  and len(element.attrib.get("class", "").split()) == 2
+                  and element.attrib.get("class", "").split()[0] == "c"
+              ]
+              stack_segments = [
+                  element for element in root.iter()
+                  if local(element.tag) == "rect"
+                  and element.attrib.get("class", "").split()[:1] == ["u"]
+              ]
+              if len(active_cells) != event_count or not stack_segments:
+                  raise SystemExit(f"{path}: counter no longer matches swallowed cells")
+              if any(segment.attrib.get("y") != "132" for segment in stack_segments):
+                  raise SystemExit(f"{path}: progress-bar geometry changed")
+              required_css = (
+                  "@keyframes snk-counter", f"snk-counter {duration}ms steps(1,end) infinite",
+                  "@media (prefers-reduced-motion:reduce)",
+                  f"100%{{transform:translateY(-{event_count * 18}px)}}",
+              )
+              if any(value not in raw for value in required_css):
+                  raise SystemExit(f"{path}: counter animation/fallback is incomplete")
+              if variant == "light" and not all(color in raw for color in ("#151515", "#464646")):
+                  raise SystemExit(f"{path}: light counter palette changed")
+              if variant == "dark" and not all(color in raw for color in ("#FEFEFE", "#9E9E9E")):
+                  raise SystemExit(f"{path}: dark counter palette changed")
+              signatures.append((start, final, grid_total, event_count, duration, state_signature))
+
+          if signatures[0] != signatures[1]:
+              raise SystemExit("light/dark synchronized counter schedules differ")
+          PY
 
       - name: publish snake to output branch
         uses: crazy-max/ghaction-github-pages@1d6ee9b181a81033a16bd707a1401afa978daab4 # v5.0.0
@@ -119,6 +296,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   generate-featured-repos:
+    needs: generate-snake
     permissions:
       contents: read
     runs-on: ubuntu-24.04
@@ -130,18 +308,27 @@ jobs:
           ref: main
           persist-credentials: false
 
+      - name: download shared public-contribution snapshot
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: public-contributions
+          path: generated-data
+
       - name: set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
 
-      # Pin one UTC date for the entire job so a run crossing midnight cannot
-      # generate one cache key and validate against the next day's date.
-      - name: pin daily cache key
+      # Reuse generate-snake's key so even a run crossing UTC midnight keeps
+      # the snapshot, snake URLs, and profile assets on one exact date.
+      - name: reuse snake cache key
         shell: bash
+        env:
+          SHARED_PROFILE_CACHE_KEY: ${{ needs.generate-snake.outputs.profile-cache-key }}
         run: |
           set -euo pipefail
-          printf 'PROFILE_CACHE_KEY=%s-r2\n' "$(date -u +%Y%m%d)" >> "$GITHUB_ENV"
+          [[ "$SHARED_PROFILE_CACHE_KEY" =~ ^[0-9]{8}-r3$ ]]
+          printf 'PROFILE_CACHE_KEY=%s\n' "$SHARED_PROFILE_CACHE_KEY" >> "$GITHUB_ENV"
 
       - name: install ImageMagick for posters and GIF flipbooks
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends imagemagick
@@ -151,14 +338,20 @@ jobs:
         env:
           PROFILE_OWNER: ${{ github.repository_owner }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLIC_CONTRIBUTIONS_SNAPSHOT: generated-data/profile-contributions.json
 
       - name: validate generated profile files
         shell: bash
         run: |
           set -euo pipefail
           node --check scripts/update-featured-repos.mjs
-          grep -Fq 'headers: publicContributionHeaders' scripts/update-featured-repos.mjs
-          if grep -Fq 'api.github.com/graphql' scripts/update-featured-repos.mjs; then
+          node --check scripts/public-contributions.mjs
+          node --check scripts/enhance-snake.mjs
+          test -s generated-data/profile-contributions.json
+          test ! -L generated-data/profile-contributions.json
+          grep -Fq 'headers: publicContributionHeaders' scripts/public-contributions.mjs
+          grep -Fq 'PUBLIC_CONTRIBUTIONS_SNAPSHOT' scripts/update-featured-repos.mjs
+          if grep -R -Fq 'api.github.com/graphql' scripts; then
             echo "contribution metrics must come from GitHub's unauthenticated public calendar" >&2
             exit 1
           fi
@@ -179,6 +372,7 @@ jobs:
           grep -Fq 'data:image/png;base64,' assets/featured-0.svg
           python3 <<'PY'
           from pathlib import Path
+          import json
           import re
           import xml.etree.ElementTree as ET
 
@@ -246,12 +440,19 @@ jobs:
               results.append((texts, int(match.group(1).replace(",", ""))))
           if results[0][0] != results[1][0]:
               raise SystemExit("light/dark streak metrics differ")
-          if results[0][1] < 2_000 or results[0][1] != results[1][1]:
+          snapshot = json.loads(Path("generated-data/profile-contributions.json").read_text())
+          if (
+              results[0][1] < 2_000
+              or results[0][1] != results[1][1]
+              or results[0][1] != snapshot.get("totalContributions")
+          ):
               raise SystemExit(f"invalid contribution totals: {results[0][1]}, {results[1][1]}")
           PY
           grep -Fq 'assets/contribution-stats-light.svg' README.md
           grep -Fq 'assets/contribution-stats-dark.svg' README.md
-          # shellcheck disable=SC1112 -- these are the profile name's literal smart quotes.
+          grep -Fq 'animated as a snake with a synchronized contribution counter' README.md
+          # These literal smart quotes are part of the profile name.
+          # shellcheck disable=SC1112
           grep -Fq 'alt="Chuyue “Steven” Wang’s GitHub streak"' README.md
           stats_block="$(sed -n '/CONTRIBUTION-STATS:START/,/CONTRIBUTION-STATS:END/p' README.md)"
           if grep -Fq 'width=' <<<"$stats_block"; then
@@ -295,7 +496,9 @@ jobs:
           retention-days: 1
 
   publish-featured-repos:
-    needs: generate-featured-repos
+    needs:
+      - generate-featured-repos
+      - publish-snake
     permissions:
       contents: write
     runs-on: ubuntu-24.04
