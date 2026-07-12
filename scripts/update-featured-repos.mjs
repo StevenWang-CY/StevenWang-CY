@@ -1,6 +1,6 @@
 // Regenerates the featured project section with one deliberately selected
-// repository: AutoPaperLab. Its card always uses the Studio Overview dashboard
-// from the repository README, then splices the linked card between the
+// repository: AutoPaperLab. Its card always uses the generated paper architecture
+// figure from the repository README, then splices the linked card between the
 // FEATURED-REPOS markers in README.md. It also generates repository-served
 // light/dark contribution statistics from GitHub's own annual calendars and
 // rotates cache keys on every dynamic profile image once per UTC day.
@@ -55,8 +55,13 @@ if (
 const FEATURED_PROJECTS = [
   {
     name: "AutoPaperLab",
-    heroPath: "docs/assets/studio_overview.png",
+    heroPath: "docs/assets/paper_figure_architecture.png",
     heroMime: "image/png",
+    heroSourceWidth: 1284,
+    heroSourceHeight: 758,
+    // Remove only the blank paper margins. This exact 2:1 crop keeps every
+    // labeled component, the lower decision branch, and both figure legends.
+    heroCrop: "1284x642+0+90",
   },
 ];
 
@@ -149,6 +154,9 @@ const featuredRepos = await Promise.all(
       ...repo,
       profileHeroPath: project.heroPath,
       profileHeroMime: project.heroMime,
+      profileHeroSourceWidth: project.heroSourceWidth,
+      profileHeroSourceHeight: project.heroSourceHeight,
+      profileHeroCrop: project.heroCrop,
     };
   }),
 );
@@ -283,6 +291,30 @@ const resizeArgs = [
   "-extent", `${POSTER_W}x${POSTER_H}`,
   "-strip",
 ];
+
+function heroResizeArgs(r) {
+  if (!r.profileHeroCrop) return resizeArgs;
+  const match = /^(\d+)x(\d+)\+(\d+)\+(\d+)$/.exec(r.profileHeroCrop);
+  if (!match) throw new Error(`invalid hero crop for ${r.name}`);
+  const [cropWidth, cropHeight, cropX, cropY] = match.slice(1).map(Number);
+  if (
+    !Number.isSafeInteger(r.profileHeroSourceWidth) ||
+    !Number.isSafeInteger(r.profileHeroSourceHeight) ||
+    cropWidth < 1 ||
+    cropHeight < 1 ||
+    cropX + cropWidth > r.profileHeroSourceWidth ||
+    cropY + cropHeight > r.profileHeroSourceHeight ||
+    cropWidth * POSTER_H !== cropHeight * POSTER_W
+  ) {
+    throw new Error(`hero crop is out of bounds or not 2:1 for ${r.name}`);
+  }
+  return [
+    "-crop", r.profileHeroCrop,
+    "+repage",
+    "-resize", `${POSTER_W}x${POSTER_H}!`,
+    "-strip",
+  ];
+}
 
 function imIdentify(tmp, format) {
   return execFileSync(
@@ -589,9 +621,19 @@ async function requiredHeroImageData(r) {
   }
   if (
     expectedMime === "image/png" &&
-    bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a"
+    (bytes.length < 24 ||
+      bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a")
   ) {
     throw new Error(`required hero is not a valid PNG for ${r.name}`);
+  }
+  if (
+    expectedMime === "image/png" &&
+    (bytes.readUInt32BE(16) !== r.profileHeroSourceWidth ||
+      bytes.readUInt32BE(20) !== r.profileHeroSourceHeight)
+  ) {
+    throw new Error(
+      `required hero dimensions changed for ${r.name}; expected ${r.profileHeroSourceWidth}x${r.profileHeroSourceHeight}`,
+    );
   }
   if (!plausibleHero(bytes, r)) {
     throw new Error(`required hero has unusable dimensions for ${r.name}`);
@@ -641,7 +683,12 @@ async function heroImageData(r) {
   if (!downloaded) return null;
   const { bytes, mime } = downloaded;
 
+  if (r.profileHeroCrop && !IM) {
+    throw new Error(`ImageMagick is required for the configured ${r.name} hero crop`);
+  }
+
   if (IM) {
+    const normalizationArgs = heroResizeArgs(r);
     const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "profile-card-"));
     const tmp = path.join(workDir, "source-image");
     const frameDir = path.join(workDir, "frames");
@@ -696,7 +743,7 @@ async function heroImageData(r) {
             ...(deleteIndices.length
               ? ["-delete", deleteIndices.join(",")]
               : []),
-            ...resizeArgs,
+            ...normalizationArgs,
             "-quality", "80",
             path.join(frameDir, "f-%04d.jpg"),
           ],
@@ -724,7 +771,7 @@ async function heroImageData(r) {
 
       const poster = execFileSync(
         IM,
-        [`${tmp}[0]`, ...resizeArgs, "png:-"],
+        [`${tmp}[0]`, ...normalizationArgs, "png:-"],
         IM_OPTIONS,
       );
       console.log(`poster for ${r.name}: via ${IM}`);

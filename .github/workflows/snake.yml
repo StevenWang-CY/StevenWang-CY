@@ -170,7 +170,7 @@ jobs:
           grep -Fq 'raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.repository_owner }}/main/assets/featured-0.svg' README.md
           grep -Fq '<svg width="846" height="212"' assets/featured-0.svg
           grep -Fq '>AutoPaperLab</text>' assets/featured-0.svg
-          grep -Fq 'Hero source: docs/assets/studio_overview.png.' assets/featured-0.svg
+          grep -Fq 'Hero source: docs/assets/paper_figure_architecture.png.' assets/featured-0.svg
           grep -Fq 'data:image/png;base64,' assets/featured-0.svg
           grep -Fq '<svg width="846" height="184"' assets/contribution-stats-light.svg
           grep -Fq '<svg width="846" height="184"' assets/contribution-stats-dark.svg

@@ -30,7 +30,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-dark.svg?v=20260712" />
   <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260712" />
-  <img alt="Chuyue “Steven” Wang’s contribution rhythm — 2,009 total contributions — 20-day current streak — 59-day longest streak" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260712" width="846" />
+  <img alt="Chuyue “Steven” Wang’s contribution rhythm — 2,009 total contributions — 20-day current streak — 62-day longest streak" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260712" width="846" />
 </picture>
 <!-- CONTRIBUTION-STATS:END -->
 
