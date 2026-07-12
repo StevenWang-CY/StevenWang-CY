@@ -34,10 +34,14 @@ if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(userName)) {
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const assetsDir = path.join(repoRoot, "assets");
 const readmeFile = path.join(repoRoot, "README.md");
+// The date changes the rendered URLs daily; the revision changes whenever the
+// image contract changes so GitHub's image proxy cannot retain an older design
+// under today's already-seen URL.
+const CACHE_REVISION = "r2";
 const dailyCacheKey =
   process.env.PROFILE_CACHE_KEY ??
-  new Date().toISOString().slice(0, 10).replaceAll("-", "");
-if (!/^\d{8}$/.test(dailyCacheKey)) {
+  `${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${CACHE_REVISION}`;
+if (!new RegExp(`^\\d{8}-${CACHE_REVISION}$`).test(dailyCacheKey)) {
   throw new Error(`invalid PROFILE_CACHE_KEY: ${dailyCacheKey}`);
 }
 const cacheYear = Number(dailyCacheKey.slice(0, 4));
@@ -74,6 +78,13 @@ const apiHeaders = {
   Accept: "application/vnd.github+json",
   "X-GitHub-Api-Version": "2022-11-28",
   ...(token ? { Authorization: `Bearer ${token}` } : {}),
+};
+// Contribution days must match what a visitor can see on the public profile.
+// Never attach the caller's token here: an owner token can expose private-day
+// activity and silently produce different streaks from GitHub Actions.
+const publicContributionHeaders = {
+  "User-Agent": userName,
+  Accept: "text/html",
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -367,18 +378,86 @@ function isoDate(date) {
   return date.toISOString().slice(0, 10);
 }
 
-function displayDate(value) {
-  const [year, month, day] = value.split("-").map(Number);
-  return `${MONTH_NAMES[month - 1]} ${day}, ${year}`;
-}
-
-function displayRange(start, end) {
-  if (!start || !end) return "No active days";
-  return start === end ? displayDate(start) : `${displayDate(start)} – ${displayDate(end)}`;
-}
-
 function commaNumber(value) {
   return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+function htmlAttribute(fragment, name) {
+  const match = new RegExp(`(?:^|\\s)${name}\\s*=\\s*(["'])(.*?)\\1`, "is").exec(
+    fragment,
+  );
+  return match?.[2] ?? null;
+}
+
+function parsePublicContributionCalendar(html, year) {
+  if (
+    !html.includes(`data-graph-url="/users/${userName}/contributions"`)
+  ) {
+    throw new Error(`GitHub returned an unexpected ${year} public contribution page`);
+  }
+  const heading =
+    /<h2\b[^>]*\bid=["']js-contribution-activity-description["'][^>]*>\s*([\d,]+)\s+contributions?\b/is.exec(
+      html,
+    );
+  const totalContributions = Number(heading?.[1]?.replaceAll(",", ""));
+  if (!Number.isSafeInteger(totalContributions) || totalContributions < 0) {
+    throw new Error(`GitHub returned an invalid ${year} public contribution total`);
+  }
+
+  const byDate = new Map();
+  const blockPattern =
+    /<td\b([^>]*)>\s*<\/td>\s*<tool-tip\b([^>]*)>([^<]*)<\/tool-tip>/gis;
+  let block;
+  while ((block = blockPattern.exec(html)) !== null) {
+    const cellAttributes = block[1];
+    const className = htmlAttribute(cellAttributes, "class") ?? "";
+    if (!className.split(/\s+/).includes("ContributionCalendar-day")) continue;
+
+    const date = htmlAttribute(cellAttributes, "data-date");
+    const cellId = htmlAttribute(cellAttributes, "id");
+    const tooltipFor = htmlAttribute(block[2], "for");
+    const tooltip = block[3].trim().replace(/\s+/g, " ");
+    const countMatch = /^([\d,]+) contributions? on\b/i.exec(tooltip);
+    const contributionCount = /^No contributions on\b/i.test(tooltip)
+      ? 0
+      : Number(countMatch?.[1]?.replaceAll(",", ""));
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(date ?? "") ||
+      !cellId ||
+      tooltipFor !== cellId ||
+      !Number.isSafeInteger(contributionCount) ||
+      contributionCount < 0 ||
+      byDate.has(date)
+    ) {
+      throw new Error(`GitHub returned a malformed ${year} public contribution day`);
+    }
+    byDate.set(date, contributionCount);
+  }
+
+  const expectedStart = new Date(Date.UTC(year, 0, 1));
+  const expectedEnd = new Date(Date.UTC(year + 1, 0, 1));
+  const expectedDayCount = Math.round((expectedEnd - expectedStart) / 86_400_000);
+  const days = [...byDate]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([date, contributionCount]) => ({ date, contributionCount }));
+  if (days.length !== expectedDayCount) {
+    throw new Error(
+      `GitHub returned a truncated ${year} public calendar (${days.length}/${expectedDayCount} days)`,
+    );
+  }
+  for (let index = 0; index < days.length; index += 1) {
+    const expectedDate = new Date(expectedStart.getTime() + index * 86_400_000);
+    if (days[index].date !== isoDate(expectedDate)) {
+      throw new Error(`GitHub returned a non-contiguous ${year} public calendar`);
+    }
+  }
+  const dayTotal = days.reduce((sum, day) => sum + day.contributionCount, 0);
+  if (dayTotal !== totalContributions) {
+    throw new Error(
+      `GitHub public ${year} total/day mismatch (${totalContributions}/${dayTotal})`,
+    );
+  }
+  return { totalContributions, days };
 }
 
 async function contributionStatsData() {
@@ -409,81 +488,32 @@ async function contributionStatsData() {
   if (years.length < 1 || years.length > 100) {
     throw new Error(`unexpected GitHub account age: ${years.length} years`);
   }
-  const query = `
-    query ProfileContributionStats($login: String!, $from: DateTime!, $to: DateTime!) {
-      user(login: $login) {
-        login
-        contributionsCollection(from: $from, to: $to) {
-          contributionCalendar {
-            totalContributions
-            weeks {
-              contributionDays {
-                contributionCount
-                date
-              }
-            }
-          }
-        }
-      }
-    }
-  `;
   const calendars = await Promise.all(
     years.map(async (year) => {
-      const from = `${year}-01-01T00:00:00Z`;
+      const from = `${year}-01-01`;
       const toDate = year === lastYear ? isoDate(profileDate) : `${year}-12-31`;
-      const to = `${toDate}T23:59:59Z`;
-      const response = await fetchWithRetry("https://api.github.com/graphql", {
-        method: "POST",
-        headers: { ...apiHeaders, "Content-Type": "application/json" },
-        body: JSON.stringify({ query, variables: { login: userName, from, to } }),
+      const url =
+        `https://github.com/users/${encodeURIComponent(userName)}/contributions` +
+        `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(toDate)}`;
+      const response = await fetchWithRetry(url, {
+        headers: publicContributionHeaders,
       });
       if (!response.ok) {
         throw new Error(
-          `GitHub GraphQL ${response.status} for ${year}: ${await response.text()}`,
+          `GitHub public contribution calendar ${response.status} for ${year}`,
         );
       }
-      const payload = await response.json();
-      if (payload.errors?.length) {
-        throw new Error(
-          `GitHub GraphQL contribution query failed for ${year}: ${payload.errors.map((e) => e.message).join("; ")}`,
-        );
+      const contentType = response.headers.get("content-type") ?? "";
+      if (!contentType.toLowerCase().startsWith("text/html")) {
+        throw new Error(`GitHub returned unexpected ${year} calendar content type`);
       }
-      const user = payload.data?.user;
-      const calendar = user?.contributionsCollection?.contributionCalendar;
-      if (user?.login?.toLowerCase() !== userName.toLowerCase() || !calendar) {
-        throw new Error(`GitHub GraphQL returned unexpected ${year} contribution data`);
-      }
-      if (
-        !Number.isSafeInteger(calendar.totalContributions) ||
-        calendar.totalContributions < 0
-      ) {
-        throw new Error(`GitHub GraphQL returned an invalid ${year} total`);
-      }
-      const annualDays =
-        calendar.weeks?.flatMap((week) => week.contributionDays ?? []) ?? [];
-      const expectedStartDate = `${year}-01-01`;
-      const expectedDayCount =
-        Math.round(
-          (Date.parse(`${toDate}T00:00:00Z`) -
-            Date.parse(`${expectedStartDate}T00:00:00Z`)) /
-            86_400_000,
-        ) + 1;
-      if (
-        annualDays.length !== expectedDayCount ||
-        annualDays[0]?.date !== expectedStartDate ||
-        annualDays.at(-1)?.date !== toDate
-      ) {
-        throw new Error(
-          `GitHub GraphQL returned a truncated ${year} calendar (${annualDays.length}/${expectedDayCount} days)`,
-        );
-      }
-      return calendar;
+      const html = (await readBodyLimited(response, 2 * 1024 * 1024)).toString("utf8");
+      return parsePublicContributionCalendar(html, year);
     }),
   );
   const days = calendars
-    .flatMap((calendar) =>
-      calendar.weeks?.flatMap((week) => week.contributionDays ?? []) ?? [],
-    );
+    .flatMap((calendar) => calendar.days)
+    .filter((day) => day.date <= isoDate(profileDate));
   if (days.length < 1 || days.length > years.length * 366) {
     throw new Error(`unexpected contribution-calendar length: ${days.length}`);
   }
@@ -496,16 +526,15 @@ async function contributionStatsData() {
       day.date > isoDate(profileDate) ||
       (previousDate && day.date <= previousDate)
     ) {
-      throw new Error("GitHub GraphQL returned malformed contribution days");
+      throw new Error("GitHub returned malformed public contribution days");
     }
     previousDate = day.date;
   }
-  // Annual calendar totals include any restricted/private aggregate the
-  // profile owner elected to share. Per-day visibility can be narrower for a
-  // repository-scoped Actions token, so totals and day sums are deliberately
-  // validated independently rather than incorrectly requiring equality.
-  const totalContributions = calendars.reduce(
-    (sum, calendar) => sum + calendar.totalContributions,
+  // GitHub's fragment endpoint serves the live full-year calendar even when
+  // `to` names an earlier day. Sum the already filtered days so a job crossing
+  // UTC midnight keeps its total and streaks on the same pinned profile date.
+  const totalContributions = days.reduce(
+    (sum, day) => sum + day.contributionCount,
     0,
   );
   if (!Number.isSafeInteger(totalContributions)) {
@@ -550,18 +579,13 @@ async function contributionStatsData() {
   const firstActiveDay = days.find((day) => day.contributionCount > 0)?.date;
   const stats = {
     total: totalContributions,
-    period: firstActiveDay ? `Since ${displayDate(firstActiveDay)}` : "No contributions yet",
+    firstActiveDate: firstActiveDay ?? null,
     currentStreak,
-    currentRange: displayRange(
-      currentStreak ? days[currentStartIndex].date : null,
-      currentStreak ? days[currentEndIndex].date : null,
-    ),
+    currentStartDate: currentStreak ? days[currentStartIndex].date : null,
+    currentEndDate: currentStreak ? days[currentEndIndex].date : null,
     longestStreak,
-    longestRange: displayRange(
-      longestStreak ? days[longestStartIndex].date : null,
-      longestStreak ? days[longestEndIndex].date : null,
-    ),
-    recentCounts: days.slice(-28).map((day) => day.contributionCount),
+    longestStartDate: longestStreak ? days[longestStartIndex].date : null,
+    longestEndDate: longestStreak ? days[longestEndIndex].date : null,
   };
   console.log(
     `contribution stats: ${commaNumber(stats.total)} total, ${stats.currentStreak}-day current streak, ${stats.longestStreak}-day longest streak`,
@@ -922,99 +946,106 @@ ${imagePart}
 `;
 }
 
+function pengDate(value, includeYear = false) {
+  const [year, month, day] = value.split("-").map(Number);
+  return `${MONTH_NAMES[month - 1]} ${day}${includeYear ? `, ${year}` : ""}`;
+}
+
+function pengRange(start, end) {
+  if (!start || !end) return pengDate(isoDate(profileDate));
+  if (start === end) return pengDate(start);
+  const spansYears = start.slice(0, 4) !== end.slice(0, 4);
+  return `${pengDate(start, spansYears)} - ${pengDate(end, spansYears)}`;
+}
+
+// Visual geometry and animation timings follow the MIT-licensed default card
+// used by Peng. See THIRD_PARTY_NOTICES.md for source and license details.
 function contributionStatsSvg(stats, dark) {
-  const palette = dark
-    ? {
-        background: "#161b22",
-        border: "#3d444d",
-        text: "#e6edf3",
-        muted: "#9198a1",
-        divider: "#30363d",
-        blue: "#58a6ff",
-        orange: "#fb923c",
-        green: "#3fb950",
-        quietBar: "#30363d",
-      }
-    : {
-        background: "#ffffff",
-        border: "#d1d9e0",
-        text: "#24292f",
-        muted: "#59636e",
-        divider: "#d8dee4",
-        blue: "#0969da",
-        orange: "#d15704",
-        green: "#1a7f37",
-        quietBar: "#eaeef2",
-      };
-  const metrics = [
-    {
-      x: 141,
-      value: commaNumber(stats.total),
-      label: "Total contributions",
-      range: stats.period,
-      color: palette.blue,
-    },
-    {
-      x: 423,
-      value: String(stats.currentStreak),
-      label: "Current streak",
-      range: stats.currentRange,
-      color: palette.orange,
-    },
-    {
-      x: 705,
-      value: String(stats.longestStreak),
-      label: "Longest streak",
-      range: stats.longestRange,
-      color: palette.green,
-    },
-  ];
-  const metricMarkup = metrics
-    .map(
-      (metric) => `  <circle cx="${metric.x}" cy="75" r="31" fill="${metric.color}" opacity="0.09"/>
-  <text class="value" x="${metric.x}" y="85" text-anchor="middle" fill="${metric.color}">${esc(metric.value)}</text>
-  <text class="label" x="${metric.x}" y="116" text-anchor="middle">${esc(metric.label)}</text>
-  <text class="range" x="${metric.x}" y="137" text-anchor="middle">${esc(metric.range)}</text>`,
-    )
-    .join("\n");
-  const maxRecent = Math.max(1, ...stats.recentCounts);
-  const recentBars = stats.recentCounts
-    .map((count, index) => {
-      const height = count === 0 ? 2 : 3 + Math.round(13 * Math.sqrt(count / maxRecent));
-      const x = 286 + index * 19;
-      const y = 171 - height;
-      const fill = count === 0 ? palette.quietBar : palette.green;
-      const opacity = count === 0 ? 1 : 0.35 + 0.65 * Math.sqrt(count / maxRecent);
-      return `  <rect x="${x}" y="${y}" width="11" height="${height}" rx="2" fill="${fill}" opacity="${opacity.toFixed(3)}"/>`;
-    })
-    .join("\n");
+  const background = dark ? "#151515" : "#FFFEFE";
+  const primary = dark ? "#FEFEFE" : "#151515";
+  const muted = dark ? "#9E9E9E" : "#464646";
+  const divider = "#E4E2E2";
+  const accent = "#FB8C00";
+  const totalRange = stats.firstActiveDate
+    ? `${pengDate(stats.firstActiveDate, true)} - Present`
+    : "No contributions yet";
+  const currentRange = pengRange(stats.currentStartDate, stats.currentEndDate);
+  const longestRange = pengRange(stats.longestStartDate, stats.longestEndDate);
   const description = [
-    `${userName} contribution rhythm.`,
+    `${userName} GitHub streak statistics.`,
     `${commaNumber(stats.total)} total contributions.`,
     `${stats.currentStreak}-day current streak.`,
     `${stats.longestStreak}-day longest streak.`,
   ].join(" ");
 
-  return `<svg width="846" height="184" viewBox="0 0 846 184" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <title>Contribution rhythm</title>
+  return `<svg xmlns='http://www.w3.org/2000/svg' style='isolation: isolate' viewBox='0 0 495 195' width='495px' height='195px' direction='ltr'>
+  <title>GitHub streak statistics</title>
   <desc>${esc(description)}</desc>
   <style>
-    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-    .heading { fill: ${palette.text}; font-size: 14px; font-weight: 700; letter-spacing: .2px; }
-    .period { fill: ${palette.muted}; font-size: 12px; }
-    .value { font: 700 28px Cambria, Georgia, 'Times New Roman', serif; }
-    .label { fill: ${palette.text}; font-size: 13px; font-weight: 650; }
-    .range { fill: ${palette.muted}; font-size: 11px; }
-    .recent { fill: ${palette.muted}; font-size: 11px; font-weight: 600; letter-spacing: .15px; }
+    @keyframes currstreak {
+      0% { font-size: 3px; opacity: 0.2; }
+      80% { font-size: 34px; opacity: 1; }
+      100% { font-size: 28px; opacity: 1; }
+    }
+    @keyframes fadein {
+      0% { opacity: 0; }
+      100% { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      [style*='animation'] { animation: none !important; opacity: 1 !important; }
+    }
   </style>
-  <rect x="0.5" y="0.5" width="845" height="183" rx="8" fill="${palette.background}" stroke="${palette.border}"/>
-  <text class="heading" x="28" y="29">Contribution rhythm</text>
-  <text class="period" x="818" y="29" text-anchor="end">Updated daily from GitHub</text>
-  <path d="M28 43.5H818" stroke="${palette.divider}"/>
-  <path d="M282 57V139M564 57V139" stroke="${palette.divider}"/>
-${metricMarkup}
-  <text class="recent" x="28" y="166">LAST 28 DAYS</text>
-${recentBars}
+  <defs>
+    <clipPath id='outer_rectangle'>
+      <rect width='495' height='195' rx='4.5'/>
+    </clipPath>
+    <mask id='mask_out_ring_behind_fire'>
+      <rect width='495' height='195' fill='white'/>
+      <ellipse cx='247.5' cy='32' rx='13' ry='18' fill='black'/>
+    </mask>
+  </defs>
+  <g clip-path='url(#outer_rectangle)'>
+    <rect stroke='#000000' stroke-opacity='0' fill='${background}' rx='4.5' x='0.5' y='0.5' width='494' height='194'/>
+    <line x1='165' y1='28' x2='165' y2='170' vector-effect='non-scaling-stroke' stroke-width='1' stroke='${divider}' stroke-linejoin='miter' stroke-linecap='square' stroke-miterlimit='3'/>
+    <line x1='330' y1='28' x2='330' y2='170' vector-effect='non-scaling-stroke' stroke-width='1' stroke='${divider}' stroke-linejoin='miter' stroke-linecap='square' stroke-miterlimit='3'/>
+
+    <g transform='translate(82.5, 48)'>
+      <text x='0' y='32' text-anchor='middle' fill='${primary}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='700' font-size='28px' style='animation: fadein 0.5s linear 0.6s both'>${esc(commaNumber(stats.total))}</text>
+    </g>
+    <g transform='translate(82.5, 84)'>
+      <text x='0' y='32' text-anchor='middle' fill='${primary}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='400' font-size='14px' style='animation: fadein 0.5s linear 0.7s both'>Total Contributions</text>
+    </g>
+    <g transform='translate(82.5, 114)'>
+      <text x='0' y='32' text-anchor='middle' fill='${muted}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='400' font-size='12px' style='animation: fadein 0.5s linear 0.8s both'>${esc(totalRange)}</text>
+    </g>
+
+    <g transform='translate(247.5, 108)'>
+      <text x='0' y='32' text-anchor='middle' fill='${accent}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='700' font-size='14px' style='animation: fadein 0.5s linear 0.9s both'>Current Streak</text>
+    </g>
+    <g transform='translate(247.5, 145)'>
+      <text x='0' y='21' text-anchor='middle' fill='${muted}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='400' font-size='12px' style='animation: fadein 0.5s linear 0.9s both'>${esc(currentRange)}</text>
+    </g>
+    <g mask='url(#mask_out_ring_behind_fire)'>
+      <circle cx='247.5' cy='71' r='40' fill='none' stroke='${accent}' stroke-width='5' style='animation: fadein 0.5s linear 0.4s both'/>
+    </g>
+    <g transform='translate(247.5, 19.5)' stroke-opacity='0' style='animation: fadein 0.5s linear 0.6s both'>
+      <path d='M -12 -0.5 L 15 -0.5 L 15 23.5 L -12 23.5 L -12 -0.5 Z' fill='none'/>
+      <path d='M 1.5 0.67 C 1.5 0.67 2.24 3.32 2.24 5.47 C 2.24 7.53 0.89 9.2 -1.17 9.2 C -3.23 9.2 -4.79 7.53 -4.79 5.47 L -4.76 5.11 C -6.78 7.51 -8 10.62 -8 13.99 C -8 18.41 -4.42 22 0 22 C 4.42 22 8 18.41 8 13.99 C 8 8.6 5.41 3.79 1.5 0.67 Z M -0.29 19 C -2.07 19 -3.51 17.6 -3.51 15.86 C -3.51 14.24 -2.46 13.1 -0.7 12.74 C 1.07 12.38 2.9 11.53 3.92 10.16 C 4.31 11.45 4.51 12.81 4.51 14.2 C 4.51 16.85 2.36 19 -0.29 19 Z' fill='${accent}'/>
+    </g>
+    <g transform='translate(247.5, 48)'>
+      <text x='0' y='32' text-anchor='middle' fill='${primary}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='700' font-size='28px' style='animation: currstreak 0.6s linear forwards'>${esc(String(stats.currentStreak))}</text>
+    </g>
+
+    <g transform='translate(412.5, 48)'>
+      <text x='0' y='32' text-anchor='middle' fill='${primary}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='700' font-size='28px' style='animation: fadein 0.5s linear 1.2s both'>${esc(String(stats.longestStreak))}</text>
+    </g>
+    <g transform='translate(412.5, 84)'>
+      <text x='0' y='32' text-anchor='middle' fill='${primary}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='400' font-size='14px' style='animation: fadein 0.5s linear 1.3s both'>Longest Streak</text>
+    </g>
+    <g transform='translate(412.5, 114)'>
+      <text x='0' y='32' text-anchor='middle' fill='${muted}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='400' font-size='12px' style='animation: fadein 0.5s linear 1.4s both'>${esc(longestRange)}</text>
+    </g>
+  </g>
 </svg>
 `;
 }
@@ -1084,16 +1115,11 @@ if (
 const featuredUpdated =
   readme.slice(0, start + START.length) + "\n" + block + "\n" + readme.slice(end);
 
-const statsAlt = [
-  `Chuyue “Steven” Wang’s contribution rhythm`,
-  `${commaNumber(contributionStats.total)} total contributions`,
-  `${contributionStats.currentStreak}-day current streak`,
-  `${contributionStats.longestStreak}-day longest streak`,
-].join(" — ");
+const statsAlt = `Chuyue “Steven” Wang’s GitHub streak`;
 const statsBlock = `<picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/${userName}/${userName}/main/assets/contribution-stats-dark.svg" />
   <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/${userName}/${userName}/main/assets/contribution-stats-light.svg" />
-  <img alt="${escAttr(statsAlt)}" src="https://raw.githubusercontent.com/${userName}/${userName}/main/assets/contribution-stats-light.svg" width="846" />
+  <img alt="${escAttr(statsAlt)}" src="https://raw.githubusercontent.com/${userName}/${userName}/main/assets/contribution-stats-light.svg" />
 </picture>`;
 const STATS_START = "<!-- CONTRIBUTION-STATS:START -->";
 const STATS_END = "<!-- CONTRIBUTION-STATS:END -->";

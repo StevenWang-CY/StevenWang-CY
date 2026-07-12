@@ -10,7 +10,7 @@ on:
 
 # A push and a scheduled/manual run must not race while updating main/output.
 concurrency:
-  group: profile-readme-${{ github.workflow }}-${{ github.ref }}
+  group: profile-readme-${{ github.workflow }}
   cancel-in-progress: true
 
 permissions: {}
@@ -141,7 +141,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf 'PROFILE_CACHE_KEY=%s\n' "$(date -u +%Y%m%d)" >> "$GITHUB_ENV"
+          printf 'PROFILE_CACHE_KEY=%s-r2\n' "$(date -u +%Y%m%d)" >> "$GITHUB_ENV"
 
       - name: install ImageMagick for posters and GIF flipbooks
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends imagemagick
@@ -157,6 +157,11 @@ jobs:
         run: |
           set -euo pipefail
           node --check scripts/update-featured-repos.mjs
+          grep -Fq 'headers: publicContributionHeaders' scripts/update-featured-repos.mjs
+          if grep -Fq 'api.github.com/graphql' scripts/update-featured-repos.mjs; then
+            echo "contribution metrics must come from GitHub's unauthenticated public calendar" >&2
+            exit 1
+          fi
           git diff --check
           test -s README.md
           test -s assets/featured-0.svg
@@ -172,24 +177,87 @@ jobs:
           grep -Fq '>AutoPaperLab</text>' assets/featured-0.svg
           grep -Fq 'Hero source: docs/assets/paper_figure_architecture.png.' assets/featured-0.svg
           grep -Fq 'data:image/png;base64,' assets/featured-0.svg
-          grep -Fq '<svg width="846" height="184"' assets/contribution-stats-light.svg
-          grep -Fq '<svg width="846" height="184"' assets/contribution-stats-dark.svg
-          grep -Fq '>Contribution rhythm</title>' assets/contribution-stats-light.svg
-          grep -Fq '>Contribution rhythm</title>' assets/contribution-stats-dark.svg
-          node <<'NODE'
-          const fs = require("node:fs");
-          const totals = ["light", "dark"].map((variant) => {
-            const svg = fs.readFileSync(`assets/contribution-stats-${variant}.svg`, "utf8");
-            const match = svg.match(/([\d,]+) total contributions/);
-            if (!match) throw new Error(`${variant} contribution total is missing`);
-            return Number(match[1].replaceAll(",", ""));
-          });
-          if (totals[0] < 2_000 || totals[0] !== totals[1]) {
-            throw new Error(`invalid contribution totals: ${totals.join(", ")}`);
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+
+          allowed_tags = {
+              "svg", "title", "desc", "style", "defs", "clipPath", "rect",
+              "mask", "ellipse", "g", "line", "text", "circle", "path",
           }
-          NODE
+          expected_refs = {"#outer_rectangle", "#mask_out_ring_behind_fire"}
+          results = []
+          for variant in ("light", "dark"):
+              path = Path(f"assets/contribution-stats-{variant}.svg")
+              raw = path.read_text()
+              if len(raw.encode()) > 64 * 1024:
+                  raise SystemExit(f"{path}: compact streak card exceeds 64 KiB")
+              if re.search(
+                  r"<!DOCTYPE|<!ENTITY|<\s*(?:script|foreignObject|image|use|a|animate|set)\b|"
+                  r"\s+on[a-z]+\s*=|(?:href|xlink:href)\s*=|@import|javascript:|data:",
+                  raw,
+                  re.IGNORECASE,
+              ):
+                  raise SystemExit(f"{path}: unsafe SVG content")
+              root = ET.fromstring(raw)
+              local = lambda tag: tag.rsplit("}", 1)[-1]
+              if (
+                  local(root.tag) != "svg"
+                  or root.attrib.get("viewBox") != "0 0 495 195"
+                  or root.attrib.get("width") != "495px"
+                  or root.attrib.get("height") != "195px"
+              ):
+                  raise SystemExit(f"{path}: not Peng's compact 495x195 layout")
+              tags = [local(element.tag) for element in root.iter()]
+              if set(tags) - allowed_tags:
+                  raise SystemExit(f"{path}: unexpected SVG tags {set(tags) - allowed_tags}")
+              if tags.count("line") != 2 or tags.count("text") != 9:
+                  raise SystemExit(f"{path}: compact card structure changed")
+              for element in root.iter():
+                  for name, value in element.attrib.items():
+                      attr = local(name).lower()
+                      if attr.startswith("on") or attr == "href":
+                          raise SystemExit(f"{path}: unsafe attribute {name}")
+                      if re.search(r"javascript:|data:", value, re.IGNORECASE):
+                          raise SystemExit(f"{path}: unsafe attribute value")
+              refs = set(re.findall(r"url\(([^)]+)\)", raw))
+              if not refs.issubset(expected_refs):
+                  raise SystemExit(f"{path}: unexpected URL references {refs}")
+              required = (
+                  "@keyframes currstreak", "@keyframes fadein",
+                  "mask_out_ring_behind_fire", "cx='247.5' cy='71' r='40'",
+                  "stroke='#FB8C00'", "Current Streak", "Longest Streak",
+                  "Total Contributions", "1.4s both",
+              )
+              if any(value not in raw for value in required):
+                  raise SystemExit(f"{path}: Peng-compatible animation/layout is incomplete")
+              forbidden = ("Contribution rhythm", "Updated daily from GitHub", "LAST 28 DAYS")
+              if any(value in raw for value in forbidden):
+                  raise SystemExit(f"{path}: rejected custom dashboard design remains")
+              if variant == "light" and not all(c in raw for c in ("#FFFEFE", "#151515", "#464646")):
+                  raise SystemExit(f"{path}: light palette changed")
+              if variant == "dark" and not all(c in raw for c in ("#151515", "#FEFEFE", "#9E9E9E")):
+                  raise SystemExit(f"{path}: dark palette changed")
+              texts = ["".join(element.itertext()).strip() for element in root.iter() if local(element.tag) == "text"]
+              match = re.search(r"([\d,]+) total contributions", raw)
+              if not match:
+                  raise SystemExit(f"{path}: contribution total is missing")
+              results.append((texts, int(match.group(1).replace(",", ""))))
+          if results[0][0] != results[1][0]:
+              raise SystemExit("light/dark streak metrics differ")
+          if results[0][1] < 2_000 or results[0][1] != results[1][1]:
+              raise SystemExit(f"invalid contribution totals: {results[0][1]}, {results[1][1]}")
+          PY
           grep -Fq 'assets/contribution-stats-light.svg' README.md
           grep -Fq 'assets/contribution-stats-dark.svg' README.md
+          # shellcheck disable=SC1112 -- these are the profile name's literal smart quotes.
+          grep -Fq 'alt="Chuyue “Steven” Wang’s GitHub streak"' README.md
+          stats_block="$(sed -n '/CONTRIBUTION-STATS:START/,/CONTRIBUTION-STATS:END/p' README.md)"
+          if grep -Fq 'width=' <<<"$stats_block"; then
+            echo "Peng's intrinsic 495px streak-card width must be preserved" >&2
+            exit 1
+          fi
           if grep -Fq 'streak-stats.demolab.com' README.md; then
             echo "README still depends on the live third-party streak service" >&2
             exit 1
