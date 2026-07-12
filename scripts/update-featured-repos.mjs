@@ -1,9 +1,8 @@
-// Regenerates the Featured Repositories section: picks the top 2
-// most-starred repos owned by the user (forks, archived repos, and the
-// profile repo excluded; ties broken by most recent push), renders each
-// as a fixed-layout SVG card (assets/featured-N.svg) with the repo's
-// own README hero image embedded, and splices matching <a><img></a>
-// tags between the FEATURED-REPOS markers in README.md.
+// Regenerates the featured project section with one deliberately selected
+// repository: AutoPaperLab. Its card always uses the Studio Overview dashboard
+// from the repository README, then splices the linked card between the
+// FEATURED-REPOS markers in README.md. It also rotates cache keys on every
+// dynamic profile image once per UTC day so GitHub's image cache refreshes.
 //
 // SVG cards are used because GitHub sanitizes CSS out of README HTML:
 // fonts and absolute positioning only survive inside an <img>-embedded
@@ -34,6 +33,20 @@ if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(userName)) {
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const assetsDir = path.join(repoRoot, "assets");
 const readmeFile = path.join(repoRoot, "README.md");
+const dailyCacheKey =
+  process.env.PROFILE_CACHE_KEY ??
+  new Date().toISOString().slice(0, 10).replaceAll("-", "");
+if (!/^\d{8}$/.test(dailyCacheKey)) {
+  throw new Error(`invalid PROFILE_CACHE_KEY: ${dailyCacheKey}`);
+}
+
+const FEATURED_PROJECTS = [
+  {
+    name: "AutoPaperLab",
+    heroPath: "docs/assets/studio_overview.png",
+    heroMime: "image/png",
+  },
+];
 
 const token = process.env.GITHUB_TOKEN;
 const imageProcessEnv = { ...process.env };
@@ -99,34 +112,33 @@ async function readBodyLimited(response, limit) {
   return Buffer.concat(chunks, total);
 }
 
-const repos = [];
-for (let page = 1; ; page++) {
-  const res = await fetchWithRetry(
-    `https://api.github.com/users/${encodeURIComponent(userName)}/repos?per_page=100&type=owner&page=${page}`,
-    { headers: apiHeaders },
-  );
-  if (!res.ok) throw new Error(`GitHub API ${res.status}: ${await res.text()}`);
-  const batch = await res.json();
-  repos.push(...batch);
-  if (batch.length < 100) break;
-}
-
-const top = repos
-  .filter(
-    (r) =>
-      !r.fork &&
-      !r.archived &&
-      r.name.toLowerCase() !== userName.toLowerCase(),
-  )
-  .sort(
-    (a, b) =>
-      b.stargazers_count - a.stargazers_count ||
-      new Date(b.pushed_at) - new Date(a.pushed_at) ||
-      a.name.localeCompare(b.name),
-  )
-  .slice(0, 2);
-
-if (top.length === 0) throw new Error("no eligible repos found");
+const featuredRepos = await Promise.all(
+  FEATURED_PROJECTS.map(async (project) => {
+    const res = await fetchWithRetry(
+      `https://api.github.com/repos/${encodeURIComponent(userName)}/${encodeURIComponent(project.name)}`,
+      { headers: apiHeaders },
+    );
+    if (!res.ok) {
+      throw new Error(
+        `GitHub API ${res.status} loading ${project.name}: ${await res.text()}`,
+      );
+    }
+    const repo = await res.json();
+    const expected = `${userName}/${project.name}`.toLowerCase();
+    if (
+      repo.full_name?.toLowerCase() !== expected ||
+      repo.owner?.login?.toLowerCase() !== userName.toLowerCase() ||
+      repo.name !== project.name
+    ) {
+      throw new Error(`GitHub returned an unexpected repository for ${project.name}`);
+    }
+    return {
+      ...repo,
+      profileHeroPath: project.heroPath,
+      profileHeroMime: project.heroMime,
+    };
+  }),
+);
 
 const esc = (s) =>
   s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -143,6 +155,30 @@ function writeFileAtomic(file, content) {
 // raster screenshots, then anything else; GitHub's OpenGraph card as
 // fallback. Returns raw bytes ready for embedding, or null.
 // ---------------------------------------------------------------------------
+
+function readmeImageSources(text) {
+  const urls = [];
+  const htmlImage = /<(?:img|source)[^>]*\b(?:src|srcset)\s*=\s*["']([^"']+)["']/gi;
+  let match;
+  while ((match = htmlImage.exec(text)) !== null) {
+    const firstSrc = match[1].trim().split(/\s*,\s*|\s+/)[0];
+    urls.push(firstSrc.replaceAll("&amp;", "&"));
+  }
+  const markdownImage = /!\[[^\]]*\]\((?:<([^>]+)>|([^)\s]+))/g;
+  while ((match = markdownImage.exec(text)) !== null) {
+    urls.push((match[1] ?? match[2]).replaceAll("&amp;", "&"));
+  }
+  return urls;
+}
+
+function resolveReadmeImagePath(source, readmePath) {
+  if (/^https?:\/\//.test(source)) return null;
+  const clean = source.split(/[?#]/, 1)[0];
+  const relative = clean.replace(/^\.\//, "");
+  return clean.startsWith("/")
+    ? clean.slice(1)
+    : path.posix.normalize(path.posix.join(path.posix.dirname(readmePath), relative));
+}
 
 async function heroImageUrl(r) {
   const fallback = `https://opengraph.githubassets.com/1/${userName}/${r.name}`;
@@ -161,17 +197,7 @@ async function heroImageUrl(r) {
   const { content, path: readmePath = "README.md" } = await rd.json();
   const text = Buffer.from(content, "base64").toString("utf8");
 
-  const urls = [];
-  const htmlImage = /<(?:img|source)[^>]*\b(?:src|srcset)\s*=\s*["']([^"']+)["']/gi;
-  let m;
-  while ((m = htmlImage.exec(text)) !== null) {
-    const firstSrc = m[1].trim().split(/\s*,\s*|\s+/)[0];
-    urls.push(firstSrc.replaceAll("&amp;", "&"));
-  }
-  const markdownImage = /!\[[^\]]*\]\((?:<([^>]+)>|([^)\s]+))/g;
-  while ((m = markdownImage.exec(text)) !== null) {
-    urls.push((m[1] ?? m[2]).replaceAll("&amp;", "&"));
-  }
+  const urls = readmeImageSources(text);
 
   // Status badges are useful in a README but make poor card artwork.
   const isBadge = (u) =>
@@ -192,11 +218,8 @@ async function heroImageUrl(r) {
     .sort((a, b) => rank(a.u) - rank(b.u) || a.i - b.i)[0].u;
 
   if (/^https?:\/\//.test(best)) return best;
-  const clean = best.split(/[?#]/, 1)[0];
-  const relative = clean.replace(/^\.\//, "");
-  const repoPath = clean.startsWith("/")
-    ? clean.slice(1)
-    : path.posix.normalize(path.posix.join(path.posix.dirname(readmePath), relative));
+  const repoPath = resolveReadmeImagePath(best, readmePath);
+  if (!repoPath) return fallback;
   const encodedPath = repoPath.split("/").map(encodeURIComponent).join("/");
   return `https://raw.githubusercontent.com/${encodeURIComponent(userName)}/${encodeURIComponent(r.name)}/${encodeURIComponent(r.default_branch)}/${encodedPath}`;
 }
@@ -290,41 +313,104 @@ function plausibleHero(bytes, r) {
   }
 }
 
-async function heroImageData(r) {
-  const primary = await heroImageUrl(r);
-  const fallback = `https://opengraph.githubassets.com/1/${userName}/${r.name}`;
-  let downloaded;
+async function requiredHeroImageData(r) {
+  const expectedPath = r.profileHeroPath;
+  const expectedMime = r.profileHeroMime;
+  if (!expectedPath || !expectedMime) {
+    throw new Error(`required hero configuration is missing for ${r.name}`);
+  }
 
-  for (const url of new Set([primary, fallback])) {
-    try {
-      const resp = await fetchWithRetry(url, {
-        headers: { "User-Agent": userName },
-      });
-      if (!resp.ok) {
-        console.error(`hero download failed for ${r.name}: HTTP ${resp.status} from ${url}`);
-        continue;
+  const readmeResponse = await fetchWithRetry(
+    `https://api.github.com/repos/${encodeURIComponent(userName)}/${encodeURIComponent(r.name)}/readme`,
+    { headers: apiHeaders },
+  );
+  if (!readmeResponse.ok) {
+    throw new Error(`README lookup failed for ${r.name}: HTTP ${readmeResponse.status}`);
+  }
+  const readme = await readmeResponse.json();
+  const readmeText = Buffer.from(readme.content, "base64").toString("utf8");
+  const resolvedSources = readmeImageSources(readmeText)
+    .map((source) => resolveReadmeImagePath(source, readme.path ?? "README.md"))
+    .filter(Boolean);
+  if (!resolvedSources.includes(expectedPath)) {
+    throw new Error(
+      `${r.name} README no longer references required hero ${expectedPath}`,
+    );
+  }
+
+  const encodedPath = expectedPath.split("/").map(encodeURIComponent).join("/");
+  const assetResponse = await fetchWithRetry(
+    `https://api.github.com/repos/${encodeURIComponent(userName)}/${encodeURIComponent(r.name)}/contents/${encodedPath}?ref=${encodeURIComponent(r.default_branch)}`,
+    { headers: apiHeaders },
+  );
+  if (!assetResponse.ok) {
+    throw new Error(
+      `required hero download failed for ${r.name}: HTTP ${assetResponse.status}`,
+    );
+  }
+  const asset = await assetResponse.json();
+  if (
+    asset.type !== "file" ||
+    asset.path !== expectedPath ||
+    asset.encoding !== "base64" ||
+    !asset.content ||
+    !Number.isFinite(asset.size) ||
+    asset.size > MAX_IMAGE_BYTES
+  ) {
+    throw new Error(`required hero metadata is invalid for ${r.name}`);
+  }
+  const bytes = Buffer.from(asset.content.replaceAll("\n", ""), "base64");
+  if (bytes.length !== asset.size) {
+    throw new Error(`required hero size mismatch for ${r.name}`);
+  }
+  if (
+    expectedMime === "image/png" &&
+    bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a"
+  ) {
+    throw new Error(`required hero is not a valid PNG for ${r.name}`);
+  }
+  if (!plausibleHero(bytes, r)) {
+    throw new Error(`required hero has unusable dimensions for ${r.name}`);
+  }
+  console.log(`using required README hero for ${r.name}: ${expectedPath}`);
+  return { bytes, mime: expectedMime };
+}
+
+async function heroImageData(r) {
+  let downloaded;
+  if (r.profileHeroPath) {
+    downloaded = await requiredHeroImageData(r);
+  } else {
+    const primary = await heroImageUrl(r);
+    const fallback = `https://opengraph.githubassets.com/1/${userName}/${r.name}`;
+    for (const url of new Set([primary, fallback])) {
+      try {
+        const resp = await fetchWithRetry(url, {
+          headers: { "User-Agent": userName },
+        });
+        if (!resp.ok) {
+          console.error(`hero download failed for ${r.name}: HTTP ${resp.status} from ${url}`);
+          continue;
+        }
+        const mime = (resp.headers.get("content-type")?.split(";")[0] || "").toLowerCase();
+        const declaredSize = Number(resp.headers.get("content-length"));
+        if (!ALLOWED_IMAGE_TYPES.has(mime)) {
+          console.error(`hero download rejected for ${r.name}: unsupported media type ${mime || "unknown"}`);
+          if (resp.body) await resp.body.cancel().catch(() => {});
+          continue;
+        }
+        if (Number.isFinite(declaredSize) && declaredSize > MAX_IMAGE_BYTES) {
+          console.error(`hero download rejected for ${r.name}: image exceeds 16 MiB`);
+          if (resp.body) await resp.body.cancel().catch(() => {});
+          continue;
+        }
+        const bytes = await readBodyLimited(resp, MAX_IMAGE_BYTES);
+        if (url !== fallback && !plausibleHero(bytes, r)) continue;
+        downloaded = { bytes, mime };
+        break;
+      } catch (error) {
+        console.error(`hero download failed for ${r.name}: ${error.message}`);
       }
-      const mime = (resp.headers.get("content-type")?.split(";")[0] || "").toLowerCase();
-      const declaredSize = Number(resp.headers.get("content-length"));
-      if (!ALLOWED_IMAGE_TYPES.has(mime)) {
-        console.error(`hero download rejected for ${r.name}: unsupported media type ${mime || "unknown"}`);
-        if (resp.body) await resp.body.cancel().catch(() => {});
-        continue;
-      }
-      if (Number.isFinite(declaredSize) && declaredSize > MAX_IMAGE_BYTES) {
-        console.error(`hero download rejected for ${r.name}: image exceeds 16 MiB`);
-        if (resp.body) await resp.body.cancel().catch(() => {});
-        continue;
-      }
-      const bytes = await readBodyLimited(resp, MAX_IMAGE_BYTES);
-      if (url !== fallback && !plausibleHero(bytes, r)) continue;
-      downloaded = {
-        bytes,
-        mime,
-      };
-      break;
-    } catch (error) {
-      console.error(`hero download failed for ${r.name}: ${error.message}`);
     }
   }
 
@@ -527,8 +613,13 @@ function svgCard(r, image) {
         `  <text class="meta" x="134" y="${META_BASELINE}">${esc(r.language)}</text>`,
       ].join("\n")
     : "";
+  const cardDescription = [
+    `${r.name} featured project card.`,
+    r.profileHeroPath ? `Hero source: ${r.profileHeroPath}.` : "",
+  ].filter(Boolean).join(" ");
 
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <desc>${esc(cardDescription)}</desc>
   <style>
     text, div { font-family: ${FONT}; }
     .card { fill: #ffffff; stroke: #d1d9e0; }
@@ -566,9 +657,9 @@ ${imagePart}
 
 fs.mkdirSync(assetsDir, { recursive: true });
 
-const images = await Promise.all(top.map(heroImageData));
+const images = await Promise.all(featuredRepos.map(heroImageData));
 
-const anchors = top.map((r, i) => {
+const anchors = featuredRepos.map((r, i) => {
   const relativeFile = `assets/featured-${i}.svg`;
   const file = path.join(repoRoot, relativeFile);
   const svg = svgCard(r, images[i]);
@@ -587,7 +678,7 @@ const anchors = top.map((r, i) => {
 
 for (const file of fs.readdirSync(assetsDir)) {
   const match = /^featured-(\d+)\.svg$/.exec(file);
-  if (match && Number(match[1]) >= top.length) {
+  if (match && Number(match[1]) >= featuredRepos.length) {
     fs.rmSync(path.join(assetsDir, file));
     console.log(`removed stale assets/${file}`);
   }
@@ -609,14 +700,40 @@ if (
 )
   throw new Error("FEATURED-REPOS markers are missing, duplicated, or out of order");
 
-const updated =
+const featuredUpdated =
   readme.slice(0, start + START.length) + "\n" + block + "\n" + readme.slice(end);
+
+let refreshedUrlCount = 0;
+const updated = featuredUpdated.replace(/https:\/\/[^"'\s>]+/g, (match) => {
+  const url = new URL(match);
+  const isSnake =
+    url.hostname === "raw.githubusercontent.com" &&
+    url.pathname.includes("/output/github-contribution-grid-snake") &&
+    url.pathname.endsWith(".svg");
+  const isFeaturedCard =
+    url.hostname === "raw.githubusercontent.com" &&
+    url.pathname === `/${userName}/${userName}/main/assets/featured-0.svg`;
+  const isStreak = url.hostname === "streak-stats.demolab.com";
+  if (!isSnake && !isFeaturedCard && !isStreak) return match;
+  url.searchParams.set("v", dailyCacheKey);
+  refreshedUrlCount += 1;
+  return url.toString();
+});
+if (refreshedUrlCount !== 7) {
+  throw new Error(`expected 7 daily-refreshed image URLs, found ${refreshedUrlCount}`);
+}
 
 if (updated !== readme) {
   writeFileAtomic(readmeFile, updated);
   console.log(
     "README.md updated:",
-    top.map((r) => `${r.name} (${r.stargazers_count} stars)`).join(", "),
+    featuredRepos
+      .map(
+        (r) =>
+          `${r.name} (${r.stargazers_count} ${r.stargazers_count === 1 ? "star" : "stars"})`,
+      )
+      .join(", "),
+    `cache=${dailyCacheKey}`,
   );
 } else {
   console.log("README.md already up to date");

@@ -135,6 +135,14 @@ jobs:
         with:
           node-version: 24
 
+      # Pin one UTC date for the entire job so a run crossing midnight cannot
+      # generate one cache key and validate against the next day's date.
+      - name: pin daily cache key
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'PROFILE_CACHE_KEY=%s\n' "$(date -u +%Y%m%d)" >> "$GITHUB_ENV"
+
       - name: install ImageMagick for posters and GIF flipbooks
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends imagemagick
 
@@ -152,11 +160,19 @@ jobs:
           git diff --check
           test -s README.md
           test -s assets/featured-0.svg
-          test -s assets/featured-1.svg
-          test "$(find assets -maxdepth 1 -type f -name 'featured-*.svg' | wc -l | tr -d ' ')" = "2"
+          test ! -e assets/featured-1.svg
+          test "$(find assets -maxdepth 1 -type f -name 'featured-*.svg' | wc -l | tr -d ' ')" = "1"
+          test "$(sed -n '/FEATURED-REPOS:START/,/FEATURED-REPOS:END/p' README.md | grep -c '<a href=')" = "1"
+          grep -Fq 'href="https://github.com/${{ github.repository_owner }}/AutoPaperLab"' README.md
           grep -Fq 'raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.repository_owner }}/main/assets/featured-0.svg' README.md
           grep -Fq '<svg width="846" height="212"' assets/featured-0.svg
-          grep -Fq '<svg width="846" height="212"' assets/featured-1.svg
+          grep -Fq '>AutoPaperLab</text>' assets/featured-0.svg
+          grep -Fq 'Hero source: docs/assets/studio_overview.png.' assets/featured-0.svg
+          grep -Fq 'data:image/png;base64,' assets/featured-0.svg
+          for icon in website linkedin email; do
+            test -s "assets/contact-${icon}.svg"
+          done
+          test "$(grep -o "v=${PROFILE_CACHE_KEY}" README.md | wc -l | tr -d ' ')" = "7"
           if grep -RIE 'zxpeng2007/zxpeng2007/(output|main/assets)|user=zxpeng2007|Zixuan' README.md assets scripts; then
             echo "reference identity leaked into generated profile files" >&2
             exit 1
@@ -206,9 +222,9 @@ jobs:
           }
           test -s generated/README.md
           test -s generated/assets/featured-0.svg
-          test -s generated/assets/featured-1.svg
-          test "$(find generated/assets -maxdepth 1 -type f -name 'featured-*.svg' | wc -l | tr -d ' ')" = "2"
-          test "$(find generated -type f | wc -l | tr -d ' ')" = "4"
+          test ! -e generated/assets/featured-1.svg
+          test "$(find generated/assets -maxdepth 1 -type f -name 'featured-*.svg' | wc -l | tr -d ' ')" = "1"
+          test "$(find generated -type f | wc -l | tr -d ' ')" = "3"
           if find generated -type l -print -quit | grep -q .; then
             echo "generated artifact contains a symbolic link" >&2
             exit 1
@@ -231,7 +247,7 @@ jobs:
           if ! git diff --staged --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -m "chore: refresh featured repositories"
+            git commit -m "chore: refresh profile dashboard"
             git push origin HEAD:main
           else
             echo "featured repositories already up to date"
