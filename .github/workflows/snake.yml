@@ -81,13 +81,23 @@ jobs:
       # Keep the reference layout exactly (bar y=132), then add a clipped
       # counter whose step changes reuse each swallowed cell's own keyframe.
       - name: add synchronized public contribution counter
-        run: >-
-          node scripts/enhance-snake.mjs
-          "$PROFILE_OWNER"
-          "$PROFILE_CACHE_KEY"
-          dist/profile-contributions.json
-          dist/github-contribution-grid-snake.svg
-          dist/github-contribution-grid-snake-dark.svg
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d dist
+          if find dist -type l -print -quit | grep -q .; then
+            echo "generated snake directory contains a symbolic link" >&2
+            exit 1
+          fi
+          # The pinned Docker action writes as root; narrow ownership repair to
+          # its isolated artifact directory before atomic postprocessing.
+          sudo chown -R "$(id -u):$(id -g)" dist
+          node scripts/enhance-snake.mjs \
+            "$PROFILE_OWNER" \
+            "$PROFILE_CACHE_KEY" \
+            dist/profile-contributions.json \
+            dist/github-contribution-grid-snake.svg \
+            dist/github-contribution-grid-snake-dark.svg
         env:
           PROFILE_OWNER: ${{ github.repository_owner }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
