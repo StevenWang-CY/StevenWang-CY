@@ -29,17 +29,9 @@
 <!-- CONTRIBUTION-STATS:START -->
 <div align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-dark.svg?v=20260713-r3#stats-summary" />
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260713-r3#stats-summary" />
-  <img align="left" alt="Chuyue “Steven” Wang’s total contributions and current GitHub streak" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260713-r3#stats-summary" width="330" height="195" />
-</picture>
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-dark.svg?v=20260713-r3#stats-longest" />
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260713-r3#stats-longest" />
-  <img align="right" alt="Chuyue “Steven” Wang’s longest GitHub streak" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260713-r3#stats-longest" width="165" height="195" />
-</picture>
-<a href="https://chuyuewang.vercel.app/" title="Visit my website"><img align="top" alt="Website" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-website.svg?v=contact-stats-rail-r2" width="311" height="65" /></a><br>
-<a href="https://www.linkedin.com/in/chuyue-wang/" title="Connect on LinkedIn"><img align="top" alt="LinkedIn" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-linkedin.svg?v=contact-stats-rail-r2" width="311" height="65" /></a><br>
-<a href="mailto:stevenwang0805@outlook.com" title="Send me an email"><img align="top" alt="Email" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-email.svg?v=contact-stats-rail-r2" width="311" height="65" /></a><br clear="all">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-dark.svg?v=20260713-r3" />
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260713-r3" />
+  <img alt="Chuyue “Steven” Wang’s GitHub streak" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260713-r3" />
+</picture><a href="https://chuyuewang.vercel.app/" title="Visit my website"><picture><img align="top" alt="Website" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-website.svg?v=contact-inline-strip-r1" width="105" height="195" /></picture></a><a href="https://www.linkedin.com/in/chuyue-wang/" title="Connect on LinkedIn"><picture><img align="top" alt="LinkedIn" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-linkedin.svg?v=contact-inline-strip-r1" width="105" height="195" /></picture></a><a href="mailto:stevenwang0805@outlook.com" title="Send me an email"><picture><img align="top" alt="Email" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-email.svg?v=contact-inline-strip-r1" width="105" height="195" /></picture></a>
 </div>
 <!-- CONTRIBUTION-STATS:END -->

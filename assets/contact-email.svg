@@ -1,16 +1,13 @@
-<svg width="311" height="65" viewBox="0 0 311 65" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="email-title email-description">
+<svg width="105" height="195" viewBox="0 0 105 195" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="email-title email-description">
   <title id="email-title">Email</title>
   <desc id="email-description">Email Chuyue Steven Wang</desc>
   <style>
-    .background { fill: #FFFEFE; }
     .caption { fill: #464646; font: 600 11.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; letter-spacing: .12px; }
     @media (prefers-color-scheme: dark) {
-      .background { fill: #151515; }
       .caption { fill: #9E9E9E; }
     }
   </style>
-  <rect class="background" width="311" height="65" />
-  <svg x="111.5" y="16.5" width="32" height="32" viewBox="0 0 192 192" aria-hidden="true">
+  <svg x="5" y="81.5" width="32" height="32" viewBox="0 0 192 192" aria-hidden="true">
     <path fill="url(#gmail-side)" d="M146 44h38v110c0 6.627-5.373 12-12 12h-20a6 6 0 0 1-6-6z" />
     <path fill="#fc413d" d="M46 44H8v110c0 6.627 5.373 12 12 12h20a6 6 0 0 0 6-6z" />
     <path fill="url(#gmail-chevron)" d="M39.226 30.456c-8.033-6.752-20.018-5.714-26.77 2.319-6.752 8.032-5.714 20.017 2.319 26.77l76.078 63.949a8 8 0 0 0 10.295 0l76.078-63.95c8.032-6.752 9.07-18.737 2.318-26.77-6.752-8.032-18.737-9.07-26.769-2.318L96 78.18z" />
@@ -35,5 +32,5 @@
       </linearGradient>
     </defs>
   </svg>
-  <text class="caption" x="154.5" y="36.5">Email</text>
+  <text class="caption" x="43" y="101.5">Email</text>
 </svg>

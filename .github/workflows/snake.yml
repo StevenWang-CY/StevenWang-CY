@@ -387,7 +387,7 @@ jobs:
           import xml.etree.ElementTree as ET
 
           allowed_tags = {
-              "svg", "title", "desc", "view", "style", "defs", "clipPath", "rect",
+              "svg", "title", "desc", "style", "defs", "clipPath", "rect",
               "mask", "ellipse", "g", "line", "text", "circle", "path",
           }
           expected_refs = {"#outer_rectangle", "#mask_out_ring_behind_fire"}
@@ -416,18 +416,8 @@ jobs:
               tags = [local(element.tag) for element in root.iter()]
               if set(tags) - allowed_tags:
                   raise SystemExit(f"{path}: unexpected SVG tags {set(tags) - allowed_tags}")
-              if tags.count("view") != 2 or tags.count("line") != 2 or tags.count("text") != 9:
+              if tags.count("line") != 2 or tags.count("text") != 9:
                   raise SystemExit(f"{path}: compact card structure changed")
-              views = {
-                  element.attrib.get("id"): element.attrib.get("viewBox")
-                  for element in root.iter()
-                  if local(element.tag) == "view"
-              }
-              if views != {
-                  "stats-summary": "0 0 330 195",
-                  "stats-longest": "330 0 165 195",
-              }:
-                  raise SystemExit(f"{path}: clickable-layout views changed")
               for element in root.iter():
                   for name, value in element.attrib.items():
                       attr = local(name).lower()
@@ -473,16 +463,12 @@ jobs:
           grep -Fq 'animated as a snake with a synchronized contribution counter' README.md
           # These literal smart quotes are part of the profile name.
           # shellcheck disable=SC1112
-          grep -Fq 'alt="Chuyue “Steven” Wang’s total contributions and current GitHub streak"' README.md
-          # shellcheck disable=SC1112
-          grep -Fq 'alt="Chuyue “Steven” Wang’s longest GitHub streak"' README.md
+          grep -Fq 'alt="Chuyue “Steven” Wang’s GitHub streak"' README.md
           stats_block="$(sed -n '/CONTRIBUTION-STATS:START/,/CONTRIBUTION-STATS:END/p' README.md)"
-          if ! grep -Fq 'align="left"' <<<"$stats_block" \
-            || ! grep -Fq 'width="330" height="195"' <<<"$stats_block" \
-            || ! grep -Fq 'align="right"' <<<"$stats_block" \
-            || ! grep -Fq 'width="165" height="195"' <<<"$stats_block" \
-            || ! grep -Fq '<br clear="all">' <<<"$stats_block"; then
-            echo "split Peng streak composition is incomplete" >&2
+          if grep -Eq '#stats-(summary|longest)|align="(left|right)"|<br' <<<"$stats_block" \
+            || [[ "$(grep -o '<picture>' <<<"$stats_block" | wc -l | tr -d ' ')" != "4" ]] \
+            || [[ "$(grep -o 'width="105" height="195"' <<<"$stats_block" | wc -l | tr -d ' ')" != "3" ]]; then
+            echo "single-row Peng stats and contact strip is incomplete" >&2
             exit 1
           fi
           if grep -Fq 'streak-stats.demolab.com' README.md; then
@@ -520,9 +506,9 @@ jobs:
               root = ET.fromstring(raw)
               if (
                   root.tag != f"{namespace}svg"
-                  or root.get("width") != "311"
-                  or root.get("height") != "65"
-                  or root.get("viewBox") != "0 0 311 65"
+                  or root.get("width") != "105"
+                  or root.get("height") != "195"
+                  or root.get("viewBox") != "0 0 105 195"
                   or root.get("role") != "img"
               ):
                   raise SystemExit(f"{path}: contact geometry or accessibility metadata changed")
@@ -541,21 +527,18 @@ jobs:
               tags = {local(element.tag) for element in elements}
               if tags & forbidden_tags:
                   raise SystemExit(f"{path}: active or externally reusable SVG content is forbidden")
-              backgrounds = [element for element in elements if local(element.tag) == "rect"]
-              if (
-                  len(backgrounds) != 1
-                  or backgrounds[0].get("class") != "background"
-                  or backgrounds[0].get("width") != "311"
-                  or backgrounds[0].get("height") != "65"
-                  or any(attribute in backgrounds[0].attrib for attribute in ("rx", "ry", "stroke"))
-                  or "ellipse" in tags
-              ):
-                  raise SystemExit(f"{path}: flat rail background changed or a pill returned")
-              captions = ["".join(element.itertext()).strip() for element in elements if local(element.tag) == "text"]
+              if tags & {"rect", "ellipse"}:
+                  raise SystemExit(f"{path}: contact cards, pills, and ellipse surfaces are forbidden")
+              caption_elements = [element for element in elements if local(element.tag) == "text"]
+              captions = ["".join(element.itertext()).strip() for element in caption_elements]
               if captions != [labels[name]]:
                   raise SystemExit(f"{path}: visible caption changed")
-              if not all(color in raw for color in ("#FFFEFE", "#151515", "#464646", "#9E9E9E")):
-                  raise SystemExit(f"{path}: Peng-compatible rail palette changed")
+              if (
+                  caption_elements[0].get("x") != "43"
+                  or caption_elements[0].get("y") != "101.5"
+                  or not all(color in raw for color in ("#464646", "#9E9E9E"))
+              ):
+                  raise SystemExit(f"{path}: compact beside-icon label layout changed")
 
               images = []
               for element in elements:
@@ -594,35 +577,32 @@ jobs:
               ('mailto:stevenwang0805@outlook.com', 'Send me an email', 'Email', 'email'),
           )
           positions = []
-          rail_rows = []
+          contact_tiles = []
           for destination, title, label, name in expected_links:
               snippet = (
-                  f'<a href="{destination}" title="{title}"><img align="top" alt="{label}" '
-                  f'src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-{name}.svg?v=contact-stats-rail-r2" '
-                  'width="311" height="65" /></a>'
+                  f'<a href="{destination}" title="{title}"><picture><img align="top" alt="{label}" '
+                  f'src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-{name}.svg?v=contact-inline-strip-r1" '
+                  'width="105" height="195" /></picture></a>'
               )
               if readme.count(snippet) != 1:
                   raise SystemExit(f"README: exact {name} contact link is missing or duplicated")
               positions.append(readme.index(snippet))
-              rail_rows.append(snippet)
+              contact_tiles.append(snippet)
           stats_start = readme.index("<!-- CONTRIBUTION-STATS:START -->")
           stats_end = readme.index("<!-- CONTRIBUTION-STATS:END -->")
-          expected_rail = (
-              f"{rail_rows[0]}<br>\n"
-              f"{rail_rows[1]}<br>\n"
-              f'{rail_rows[2]}<br clear="all">'
-          )
+          expected_strip = "".join(contact_tiles)
           if (
               positions != sorted(positions)
               or positions[0] <= stats_start
               or positions[-1] >= stats_end
-              or readme.count(expected_rail) != 1
-              or readme.count("#stats-summary") != 3
-              or readme.count("#stats-longest") != 3
+              or readme.count(expected_strip) != 1
+              or "#stats-summary" in readme
+              or "#stats-longest" in readme
               or "contact-borderless-r1" in readme
               or "contact-stats-rail-r1" in readme
+              or "contact-stats-rail-r2" in readme
           ):
-              raise SystemExit("README: vertical contact rail or streak views changed")
+              raise SystemExit("README: ordered inline stats/contact strip changed")
           if len(re.findall(r"assets/contact-(?:website|linkedin|email)\.svg", readme)) != 3:
               raise SystemExit("README: unexpected contact asset reference")
           outside_stats = readme[:stats_start] + readme[stats_end + len("<!-- CONTRIBUTION-STATS:END -->"):]
@@ -630,7 +610,7 @@ jobs:
               raise SystemExit("README: legacy contact footer returned")
           PY
           test "$(tail -n 1 README.md)" = "<!-- CONTRIBUTION-STATS:END -->"
-          test "$(grep -o "v=${PROFILE_CACHE_KEY}" README.md | wc -l | tr -d ' ')" = "10"
+          test "$(grep -o "v=${PROFILE_CACHE_KEY}" README.md | wc -l | tr -d ' ')" = "7"
           if grep -RIE 'zxpeng2007/zxpeng2007/(output|main/assets)|user=zxpeng2007|Zixuan' README.md assets scripts; then
             echo "reference identity leaked into generated profile files" >&2
             exit 1

@@ -826,8 +826,6 @@ function contributionStatsSvg(stats, dark) {
   return `<svg xmlns='http://www.w3.org/2000/svg' style='isolation: isolate' viewBox='0 0 495 195' width='495px' height='195px' direction='ltr'>
   <title>GitHub streak statistics</title>
   <desc>${esc(description)}</desc>
-  <view id='stats-summary' viewBox='0 0 330 195'/>
-  <view id='stats-longest' viewBox='330 0 165 195'/>
   <style>
     @keyframes currstreak {
       0% { font-size: 3px; opacity: 0.2; }
@@ -962,23 +960,14 @@ if (
 const featuredUpdated =
   readme.slice(0, start + START.length) + "\n" + block + "\n" + readme.slice(end);
 
-const summaryAlt = `Chuyue “Steven” Wang’s total contributions and current GitHub streak`;
-const longestAlt = `Chuyue “Steven” Wang’s longest GitHub streak`;
+const statsAlt = `Chuyue “Steven” Wang’s GitHub streak`;
 const assetRoot = `https://raw.githubusercontent.com/${userName}/${userName}/main/assets`;
 const statsBlock = `<div align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="${assetRoot}/contribution-stats-dark.svg#stats-summary" />
-  <source media="(prefers-color-scheme: light)" srcset="${assetRoot}/contribution-stats-light.svg#stats-summary" />
-  <img align="left" alt="${escAttr(summaryAlt)}" src="${assetRoot}/contribution-stats-light.svg#stats-summary" width="330" height="195" />
-</picture>
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="${assetRoot}/contribution-stats-dark.svg#stats-longest" />
-  <source media="(prefers-color-scheme: light)" srcset="${assetRoot}/contribution-stats-light.svg#stats-longest" />
-  <img align="right" alt="${escAttr(longestAlt)}" src="${assetRoot}/contribution-stats-light.svg#stats-longest" width="165" height="195" />
-</picture>
-<a href="https://chuyuewang.vercel.app/" title="Visit my website"><img align="top" alt="Website" src="${assetRoot}/contact-website.svg?v=contact-stats-rail-r2" width="311" height="65" /></a><br>
-<a href="https://www.linkedin.com/in/chuyue-wang/" title="Connect on LinkedIn"><img align="top" alt="LinkedIn" src="${assetRoot}/contact-linkedin.svg?v=contact-stats-rail-r2" width="311" height="65" /></a><br>
-<a href="mailto:stevenwang0805@outlook.com" title="Send me an email"><img align="top" alt="Email" src="${assetRoot}/contact-email.svg?v=contact-stats-rail-r2" width="311" height="65" /></a><br clear="all">
+  <source media="(prefers-color-scheme: dark)" srcset="${assetRoot}/contribution-stats-dark.svg" />
+  <source media="(prefers-color-scheme: light)" srcset="${assetRoot}/contribution-stats-light.svg" />
+  <img alt="${escAttr(statsAlt)}" src="${assetRoot}/contribution-stats-light.svg" />
+</picture><a href="https://chuyuewang.vercel.app/" title="Visit my website"><picture><img align="top" alt="Website" src="${assetRoot}/contact-website.svg?v=contact-inline-strip-r1" width="105" height="195" /></picture></a><a href="https://www.linkedin.com/in/chuyue-wang/" title="Connect on LinkedIn"><picture><img align="top" alt="LinkedIn" src="${assetRoot}/contact-linkedin.svg?v=contact-inline-strip-r1" width="105" height="195" /></picture></a><a href="mailto:stevenwang0805@outlook.com" title="Send me an email"><picture><img align="top" alt="Email" src="${assetRoot}/contact-email.svg?v=contact-inline-strip-r1" width="105" height="195" /></picture></a>
 </div>`;
 const STATS_START = "<!-- CONTRIBUTION-STATS:START -->";
 const STATS_END = "<!-- CONTRIBUTION-STATS:END -->";
@@ -1032,8 +1021,8 @@ const updated = snakeUpdated.replace(/https:\/\/[^"'\s>]+/g, (match) => {
   refreshedUrlCount += 1;
   return url.toString();
 });
-if (refreshedUrlCount !== 10) {
-  throw new Error(`expected 10 daily-refreshed image URLs, found ${refreshedUrlCount}`);
+if (refreshedUrlCount !== 7) {
+  throw new Error(`expected 7 daily-refreshed image URLs, found ${refreshedUrlCount}`);
 }
 
 if (updated !== readme) {

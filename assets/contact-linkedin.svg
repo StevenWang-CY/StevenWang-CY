@@ -1,17 +1,14 @@
-<svg width="311" height="65" viewBox="0 0 311 65" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="linkedin-title linkedin-description">
+<svg width="105" height="195" viewBox="0 0 105 195" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="linkedin-title linkedin-description">
   <title id="linkedin-title">LinkedIn</title>
   <desc id="linkedin-description">Open Chuyue Steven Wang's LinkedIn profile</desc>
   <style>
-    .background { fill: #FFFEFE; }
     .caption { fill: #464646; font: 600 11.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; letter-spacing: .12px; }
     @media (prefers-color-scheme: dark) {
-      .background { fill: #151515; }
       .caption { fill: #9E9E9E; }
     }
   </style>
-  <rect class="background" width="311" height="65" />
-  <svg x="113.5" y="18.5" width="28" height="28" viewBox="0 0 27 27" aria-hidden="true">
+  <svg x="7" y="83.5" width="28" height="28" viewBox="0 0 27 27" aria-hidden="true">
     <path fill="#0A66C2" fill-rule="evenodd" d="M1.91 0h22.363a1.91 1.91 0 011.909 1.91v22.363a1.91 1.91 0 01-1.91 1.909H1.91A1.91 1.91 0 010 24.272V1.91A1.91 1.91 0 011.91 0zm1.908 22.364h3.818V9.818H3.818zM8.182 5.727a2.455 2.455 0 10-4.91 0 2.455 2.455 0 004.91 0zm2.182 4.091v12.546h3.818v-6.077c0-2.037.75-3.332 2.553-3.332 1.3 0 1.81 1.201 1.81 3.332v6.077h3.819v-6.93c0-3.74-.895-5.78-4.667-5.78-1.967 0-3.277.921-3.788 1.946V9.818z" />
   </svg>
-  <text class="caption" x="154.5" y="36.5">LinkedIn</text>
+  <text class="caption" x="43" y="101.5">LinkedIn</text>
 </svg>
