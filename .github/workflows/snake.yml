@@ -467,7 +467,8 @@ jobs:
           stats_block="$(sed -n '/CONTRIBUTION-STATS:START/,/CONTRIBUTION-STATS:END/p' README.md)"
           if grep -Eq '#stats-(summary|longest)|align="(left|right)"|<br' <<<"$stats_block" \
             || [[ "$(grep -o '<picture>' <<<"$stats_block" | wc -l | tr -d ' ')" != "4" ]] \
-            || [[ "$(grep -o 'width="105" height="195"' <<<"$stats_block" | wc -l | tr -d ' ')" != "3" ]]; then
+            || [[ "$(grep -o 'width="58.5%"' <<<"$stats_block" | wc -l | tr -d ' ')" != "1" ]] \
+            || [[ "$(grep -o 'width="12.4%"' <<<"$stats_block" | wc -l | tr -d ' ')" != "3" ]]; then
             echo "single-row Peng stats and contact strip is incomplete" >&2
             exit 1
           fi
@@ -582,7 +583,7 @@ jobs:
               snippet = (
                   f'<a href="{destination}" title="{title}"><picture><img align="top" alt="{label}" '
                   f'src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-{name}.svg?v=contact-inline-strip-r1" '
-                  'width="105" height="195" /></picture></a>'
+                  'width="12.4%" /></picture></a>'
               )
               if readme.count(snippet) != 1:
                   raise SystemExit(f"README: exact {name} contact link is missing or duplicated")
