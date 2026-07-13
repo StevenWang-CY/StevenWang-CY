@@ -17,20 +17,20 @@
 </div>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake-dark.svg?v=20260712-r3" />
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake.svg?v=20260712-r3" />
-  <img alt="Chuyue “Steven” Wang’s GitHub contribution graph, animated as a snake with a synchronized contribution counter" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake.svg?v=20260712-r3" />
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake-dark.svg?v=20260713-r3" />
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake.svg?v=20260713-r3" />
+  <img alt="Chuyue “Steven” Wang’s GitHub contribution graph, animated as a snake with a synchronized contribution counter" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake.svg?v=20260713-r3" />
 </picture>
 
 <!-- FEATURED-REPOS:START -->
-<a href="https://github.com/StevenWang-CY/AutoPaperLab"><img alt="AutoPaperLab — Autonomous, honesty-first research-to-paper pipeline that turns research briefs into auditable paper packages with verified citations and reproducible experiments. — 1 star — Python" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/featured-0.svg?v=20260712-r3" width="846" /></a>
+<a href="https://github.com/StevenWang-CY/AutoPaperLab"><img alt="AutoPaperLab — Autonomous, honesty-first research-to-paper pipeline that turns research briefs into auditable paper packages with verified citations and reproducible experiments. — 1 star — Python" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/featured-0.svg?v=20260713-r3" width="846" /></a>
 <!-- FEATURED-REPOS:END -->
 
 <!-- CONTRIBUTION-STATS:START -->
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-dark.svg?v=20260712-r3" />
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260712-r3" />
-  <img alt="Chuyue “Steven” Wang’s GitHub streak" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260712-r3" />
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-dark.svg?v=20260713-r3" />
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260713-r3" />
+  <img alt="Chuyue “Steven” Wang’s GitHub streak" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260713-r3" />
 </picture>
 <!-- CONTRIBUTION-STATS:END -->
 
