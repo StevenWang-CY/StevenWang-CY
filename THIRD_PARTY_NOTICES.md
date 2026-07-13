@@ -1,5 +1,24 @@
 # Third-party notices
 
+## Contact-footer brand assets
+
+The LinkedIn contact icon is the unmodified official LinkedIn `in` mark,
+obtained from LinkedIn's official website and used solely as a link to the
+profile owner's LinkedIn page. Its use is subject to the
+[LinkedIn Brand Guidelines](https://brand.linkedin.com/in-logo). LinkedIn and
+the LinkedIn logo are trademarks of LinkedIn Corporation and its affiliates.
+
+The email contact icon is the unmodified Gmail product icon obtained from an
+official [Google Workspace brand asset](https://knowledge.workspace.google.com/static/images/icons/product/gmail.svg).
+Its use is subject to Google's applicable brand guidelines. Google, Gmail, and
+their respective logos are trademarks of Google LLC.
+
+The website contact icon embeds the profile owner's public GitHub avatar,
+retrieved from `https://avatars.githubusercontent.com/u/203932027?v=4` on
+2026-07-12.
+
+## GitHub streak-statistics presentation
+
 The compact GitHub streak-statistics SVG presentation and its animation timing
 in `scripts/update-featured-repos.mjs` are adapted from
 [`DenverCoder1/github-readme-streak-stats`](https://github.com/DenverCoder1/github-readme-streak-stats),

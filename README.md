@@ -39,9 +39,9 @@
 <div align="center">
 
 <p>
-  <a href="https://chuyuewang.vercel.app/" title="Visit my website"><img alt="Website" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-website.svg" width="132" /></a>&nbsp;&nbsp;
-  <a href="https://www.linkedin.com/in/chuyue-wang/" title="Connect on LinkedIn"><img alt="LinkedIn" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-linkedin.svg" width="140" /></a>&nbsp;&nbsp;
-  <a href="mailto:stevenwang0805@outlook.com" title="Send me an email"><img alt="Email" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-email.svg" width="122" /></a>
+  <a href="https://chuyuewang.vercel.app/" title="Visit my website"><img alt="Website" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-website.svg?v=contact-borderless-r1" width="90" /></a>&nbsp;&nbsp;&nbsp;
+  <a href="https://www.linkedin.com/in/chuyue-wang/" title="Connect on LinkedIn"><img alt="LinkedIn" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-linkedin.svg?v=contact-borderless-r1" width="90" /></a>&nbsp;&nbsp;&nbsp;
+  <a href="mailto:stevenwang0805@outlook.com" title="Send me an email"><img alt="Email" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-email.svg?v=contact-borderless-r1" width="90" /></a>
 </p>
 
 </div>

@@ -475,12 +475,114 @@ jobs:
           fi
           for icon in website linkedin email; do
             test -s "assets/contact-${icon}.svg"
+            test ! -L "assets/contact-${icon}.svg"
           done
-          stats_line="$(grep -n 'CONTRIBUTION-STATS:END' README.md | cut -d: -f1)"
-          for icon in website linkedin email; do
-            contact_line="$(grep -n "assets/contact-${icon}.svg" README.md | cut -d: -f1)"
-            test "$contact_line" -gt "$stats_line"
-          done
+          python - <<'PY'
+          import base64
+          import hashlib
+          import re
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+
+          namespace = "{http://www.w3.org/2000/svg}"
+          names = ("website", "linkedin", "email")
+          labels = {"website": "Website", "linkedin": "LinkedIn", "email": "Email"}
+          forbidden_tags = {"animate", "animateMotion", "animateTransform", "foreignObject", "script", "set", "use"}
+
+          def local(value):
+              return value.rsplit("}", 1)[-1]
+
+          for name in names:
+              path = Path(f"assets/contact-{name}.svg")
+              raw_bytes = path.read_bytes()
+              if len(raw_bytes) > 16 * 1024:
+                  raise SystemExit(f"{path}: contact asset exceeds 16 KiB")
+              raw = raw_bytes.decode("utf-8")
+              lowered = raw.lower()
+              if "<!doctype" in lowered or "<!entity" in lowered:
+                  raise SystemExit(f"{path}: document types and entities are forbidden")
+              root = ET.fromstring(raw)
+              if (
+                  root.tag != f"{namespace}svg"
+                  or root.get("width") != "90"
+                  or root.get("height") != "68"
+                  or root.get("viewBox") != "0 0 90 68"
+                  or root.get("role") != "img"
+              ):
+                  raise SystemExit(f"{path}: contact geometry or accessibility metadata changed")
+
+              title = root.find(f"{namespace}title")
+              description = root.find(f"{namespace}desc")
+              if (
+                  title is None
+                  or title.text != labels[name]
+                  or description is None
+                  or not "Chuyue Steven Wang" in (description.text or "")
+              ):
+                  raise SystemExit(f"{path}: title or description changed")
+
+              elements = list(root.iter())
+              tags = {local(element.tag) for element in elements}
+              if tags & forbidden_tags:
+                  raise SystemExit(f"{path}: active or externally reusable SVG content is forbidden")
+              if tags & {"rect", "ellipse"}:
+                  raise SystemExit(f"{path}: pill or ellipse surfaces must not return")
+              captions = ["".join(element.itertext()).strip() for element in elements if local(element.tag) == "text"]
+              if captions != [labels[name]]:
+                  raise SystemExit(f"{path}: visible caption changed")
+
+              images = []
+              for element in elements:
+                  for attribute, value in element.attrib.items():
+                      attribute_name = local(attribute)
+                      if attribute_name.lower().startswith("on"):
+                          raise SystemExit(f"{path}: event attributes are forbidden")
+                      if attribute_name == "href":
+                          if local(element.tag) != "image" or not value.startswith("data:image/jpeg;base64,"):
+                              raise SystemExit(f"{path}: external SVG references are forbidden")
+                          images.append(value)
+
+              if name == "website":
+                  if len(images) != 1 or "portrait-clip" not in raw:
+                      raise SystemExit(f"{path}: embedded clipped profile portrait is missing")
+                  portrait = base64.b64decode(images[0].split(",", 1)[1], validate=True)
+                  if (
+                      len(portrait) > 4 * 1024
+                      or not portrait.startswith(b"\xff\xd8")
+                      or not portrait.endswith(b"\xff\xd9")
+                      or hashlib.sha256(portrait).hexdigest() != "5fd68a48d5e61a8525330a94cd2256375e48df34726a8a7acd2f48cdbf10378d"
+                  ):
+                      raise SystemExit(f"{path}: embedded profile portrait changed")
+              elif images:
+                  raise SystemExit(f"{path}: unexpected embedded image")
+
+              if name == "linkedin" and ("#0A66C2" not in raw or "M1.91 0h22.363" not in raw):
+                  raise SystemExit(f"{path}: official LinkedIn mark changed")
+              if name == "email" and not all(token in raw for token in ("#fc413d", "gmail-side", "gmail-chevron")):
+                  raise SystemExit(f"{path}: official Gmail artwork changed")
+
+          readme = Path("README.md").read_text()
+          expected_links = (
+              ('https://chuyuewang.vercel.app/', 'Visit my website', 'Website', 'website'),
+              ('https://www.linkedin.com/in/chuyue-wang/', 'Connect on LinkedIn', 'LinkedIn', 'linkedin'),
+              ('mailto:stevenwang0805@outlook.com', 'Send me an email', 'Email', 'email'),
+          )
+          positions = []
+          for destination, title, label, name in expected_links:
+              snippet = (
+                  f'<a href="{destination}" title="{title}"><img alt="{label}" '
+                  f'src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-{name}.svg?v=contact-borderless-r1" '
+                  'width="90" /></a>'
+              )
+              if readme.count(snippet) != 1:
+                  raise SystemExit(f"README: exact {name} contact link is missing or duplicated")
+              positions.append(readme.index(snippet))
+          stats_end = readme.index("<!-- CONTRIBUTION-STATS:END -->")
+          if positions != sorted(positions) or positions[0] <= stats_end:
+              raise SystemExit("README: contact links moved, reordered, or escaped the footer")
+          if len(re.findall(r"assets/contact-(?:website|linkedin|email)\.svg", readme)) != 3:
+              raise SystemExit("README: unexpected contact asset reference")
+          PY
           test "$(tail -n 1 README.md)" = "</div>"
           test "$(grep -o "v=${PROFILE_CACHE_KEY}" README.md | wc -l | tr -d ' ')" = "7"
           if grep -RIE 'zxpeng2007/zxpeng2007/(output|main/assets)|user=zxpeng2007|Zixuan' README.md assets scripts; then
