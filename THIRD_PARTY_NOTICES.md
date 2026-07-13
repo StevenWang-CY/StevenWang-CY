@@ -1,6 +1,6 @@
 # Third-party notices
 
-## Contact-footer brand assets
+## Contact brand assets
 
 The LinkedIn contact icon is the unmodified official LinkedIn `in` mark,
 obtained from LinkedIn's official website and used solely as a link to the
