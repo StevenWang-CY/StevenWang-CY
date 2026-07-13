@@ -976,9 +976,9 @@ const statsBlock = `<div align="center">
   <source media="(prefers-color-scheme: light)" srcset="${assetRoot}/contribution-stats-light.svg#stats-longest" />
   <img align="right" alt="${escAttr(longestAlt)}" src="${assetRoot}/contribution-stats-light.svg#stats-longest" width="165" height="195" />
 </picture>
-<a href="https://chuyuewang.vercel.app/" title="Visit my website"><img align="top" alt="Website" src="${assetRoot}/contact-website.svg?v=contact-stats-rail-r1" width="351" height="65" /></a><br>
-<a href="https://www.linkedin.com/in/chuyue-wang/" title="Connect on LinkedIn"><img align="top" alt="LinkedIn" src="${assetRoot}/contact-linkedin.svg?v=contact-stats-rail-r1" width="351" height="65" /></a><br>
-<a href="mailto:stevenwang0805@outlook.com" title="Send me an email"><img align="top" alt="Email" src="${assetRoot}/contact-email.svg?v=contact-stats-rail-r1" width="351" height="65" /></a><br clear="all">
+<a href="https://chuyuewang.vercel.app/" title="Visit my website"><img align="top" alt="Website" src="${assetRoot}/contact-website.svg?v=contact-stats-rail-r2" width="311" height="65" /></a><br>
+<a href="https://www.linkedin.com/in/chuyue-wang/" title="Connect on LinkedIn"><img align="top" alt="LinkedIn" src="${assetRoot}/contact-linkedin.svg?v=contact-stats-rail-r2" width="311" height="65" /></a><br>
+<a href="mailto:stevenwang0805@outlook.com" title="Send me an email"><img align="top" alt="Email" src="${assetRoot}/contact-email.svg?v=contact-stats-rail-r2" width="311" height="65" /></a><br clear="all">
 </div>`;
 const STATS_START = "<!-- CONTRIBUTION-STATS:START -->";
 const STATS_END = "<!-- CONTRIBUTION-STATS:END -->";

@@ -520,9 +520,9 @@ jobs:
               root = ET.fromstring(raw)
               if (
                   root.tag != f"{namespace}svg"
-                  or root.get("width") != "351"
+                  or root.get("width") != "311"
                   or root.get("height") != "65"
-                  or root.get("viewBox") != "0 0 351 65"
+                  or root.get("viewBox") != "0 0 311 65"
                   or root.get("role") != "img"
               ):
                   raise SystemExit(f"{path}: contact geometry or accessibility metadata changed")
@@ -545,7 +545,7 @@ jobs:
               if (
                   len(backgrounds) != 1
                   or backgrounds[0].get("class") != "background"
-                  or backgrounds[0].get("width") != "351"
+                  or backgrounds[0].get("width") != "311"
                   or backgrounds[0].get("height") != "65"
                   or any(attribute in backgrounds[0].attrib for attribute in ("rx", "ry", "stroke"))
                   or "ellipse" in tags
@@ -598,8 +598,8 @@ jobs:
           for destination, title, label, name in expected_links:
               snippet = (
                   f'<a href="{destination}" title="{title}"><img align="top" alt="{label}" '
-                  f'src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-{name}.svg?v=contact-stats-rail-r1" '
-                  'width="351" height="65" /></a>'
+                  f'src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-{name}.svg?v=contact-stats-rail-r2" '
+                  'width="311" height="65" /></a>'
               )
               if readme.count(snippet) != 1:
                   raise SystemExit(f"README: exact {name} contact link is missing or duplicated")
@@ -620,6 +620,7 @@ jobs:
               or readme.count("#stats-summary") != 3
               or readme.count("#stats-longest") != 3
               or "contact-borderless-r1" in readme
+              or "contact-stats-rail-r1" in readme
           ):
               raise SystemExit("README: vertical contact rail or streak views changed")
           if len(re.findall(r"assets/contact-(?:website|linkedin|email)\.svg", readme)) != 3:
