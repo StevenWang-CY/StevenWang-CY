@@ -3,7 +3,9 @@
 // figure from the repository README, then splices the linked card between the
 // FEATURED-REPOS markers in README.md. It also generates repository-served
 // light/dark contribution statistics from GitHub's own annual calendars and
-// rotates cache keys on every dynamic profile image once per UTC day.
+// keys snake/stat images by their live contribution total and the featured
+// card by its live star count, so changed numbers invalidate GitHub's image
+// cache immediately after a refresh run without no-op URL churn.
 //
 // SVG cards are used because GitHub sanitizes CSS out of README HTML:
 // fonts and absolute positioning only survive inside an <img>-embedded
@@ -35,9 +37,9 @@ if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(userName)) {
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const assetsDir = path.join(repoRoot, "assets");
 const readmeFile = path.join(repoRoot, "README.md");
-// The date changes the rendered URLs daily; the revision changes whenever the
-// image contract changes so GitHub's image proxy cannot retain an older design
-// under today's already-seen URL.
+// The date supplies a stable daily base; live star/contribution suffixes change
+// rendered URLs within that day. The revision changes whenever the image
+// contract changes so GitHub's image proxy cannot retain an older design.
 const CACHE_REVISION = "r3";
 const dailyCacheKey =
   process.env.PROFILE_CACHE_KEY ??
@@ -150,7 +152,9 @@ const featuredRepos = await Promise.all(
     if (
       repo.full_name?.toLowerCase() !== expected ||
       repo.owner?.login?.toLowerCase() !== userName.toLowerCase() ||
-      repo.name !== project.name
+      repo.name !== project.name ||
+      !Number.isSafeInteger(repo.stargazers_count) ||
+      repo.stargazers_count < 0
     ) {
       throw new Error(`GitHub returned an unexpected repository for ${project.name}`);
     }
@@ -1001,6 +1005,8 @@ const snakeUpdated = statsUpdated.replace(
 );
 
 let refreshedUrlCount = 0;
+const featuredCacheKey = `${dailyCacheKey}-s${featuredRepos[0].stargazers_count}`;
+const contributionCacheKey = `${dailyCacheKey}-c${contributionStats.total}`;
 const updated = snakeUpdated.replace(/https:\/\/[^"'\s>]+/g, (match) => {
   const url = new URL(match);
   const isSnake =
@@ -1017,12 +1023,15 @@ const updated = snakeUpdated.replace(/https:\/\/[^"'\s>]+/g, (match) => {
     ) &&
     url.pathname.endsWith(".svg");
   if (!isSnake && !isFeaturedCard && !isContributionStats) return match;
-  url.searchParams.set("v", dailyCacheKey);
+  url.searchParams.set(
+    "v",
+    isFeaturedCard ? featuredCacheKey : contributionCacheKey,
+  );
   refreshedUrlCount += 1;
   return url.toString();
 });
 if (refreshedUrlCount !== 7) {
-  throw new Error(`expected 7 daily-refreshed image URLs, found ${refreshedUrlCount}`);
+  throw new Error(`expected 7 dynamically refreshed image URLs, found ${refreshedUrlCount}`);
 }
 
 if (updated !== readme) {
@@ -1036,6 +1045,8 @@ if (updated !== readme) {
       )
       .join(", "),
     `cache=${dailyCacheKey}`,
+    `featuredCache=${featuredCacheKey}`,
+    `contributionCache=${contributionCacheKey}`,
   );
 } else {
   console.log("README.md already up to date");

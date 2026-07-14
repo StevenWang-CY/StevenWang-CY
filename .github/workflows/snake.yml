@@ -2,7 +2,7 @@ name: generate animation
 
 on:
   schedule:
-    - cron: "17 0 * * *" # runs daily at 00:17 UTC
+    - cron: "17 */4 * * *" # refreshes profile data every four hours (UTC)
   workflow_dispatch:
   push:
     branches:
@@ -380,6 +380,54 @@ jobs:
           grep -Fq '>AutoPaperLab</text>' assets/featured-0.svg
           grep -Fq 'Hero source: docs/assets/paper_figure_architecture.png.' assets/featured-0.svg
           grep -Fq 'data:image/png;base64,' assets/featured-0.svg
+          python3 <<'PY'
+          from pathlib import Path
+          import json
+          import os
+          import xml.etree.ElementTree as ET
+
+          asset = Path("assets/featured-0.svg")
+          root = ET.fromstring(asset.read_text(encoding="utf8"))
+          local = lambda tag: tag.rsplit("}", 1)[-1]
+          star_nodes = [
+              element
+              for element in root.iter()
+              if (
+                  local(element.tag) == "text"
+                  and element.attrib.get("class") == "meta"
+                  and element.attrib.get("x") == "50"
+              )
+          ]
+          if len(star_nodes) != 1 or not (star_nodes[0].text or "").isdigit():
+              raise SystemExit("featured card: live star count is missing or invalid")
+          stars = int(star_nodes[0].text)
+          label = f"{stars} {'star' if stars == 1 else 'stars'}"
+          cache_key = os.environ["PROFILE_CACHE_KEY"]
+          snapshot = json.loads(
+              Path("generated-data/profile-contributions.json").read_text(encoding="utf8")
+          )
+          contributions = snapshot.get("totalContributions")
+          if not isinstance(contributions, int) or contributions < 2_000:
+              raise SystemExit("profile snapshot: contribution total is invalid")
+          readme = Path("README.md").read_text(encoding="utf8")
+          featured = readme[
+              readme.index("<!-- FEATURED-REPOS:START -->"):
+              readme.index("<!-- FEATURED-REPOS:END -->")
+          ]
+          expected_source = (
+              "https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/"
+              f"main/assets/featured-0.svg?v={cache_key}-s{stars}"
+          )
+          if (
+              f" — {label} — " not in featured
+              or featured.count(expected_source) != 1
+              or readme.count(f"v={cache_key}-s{stars}") != 1
+              or readme.count(f"v={cache_key}-c{contributions}") != 6
+          ):
+              raise SystemExit(
+                  "profile: generated numbers, alt text, and content cache keys disagree"
+              )
+          PY
           python3 <<'PY'
           from pathlib import Path
           import json
