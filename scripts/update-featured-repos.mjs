@@ -61,6 +61,16 @@ if (
 
 const FEATURED_PROJECTS = [
   {
+    name: "township",
+    heroPath: "docs/media/social-preview.png",
+    heroMime: "image/png",
+    heroSourceWidth: 1280,
+    heroSourceHeight: 640,
+    // The repository's social-preview card is authored at exactly 2:1
+    // (wordmark, tagline, and the living pixel town) — use the full frame.
+    heroCrop: "1280x640+0+0",
+  },
+  {
     name: "AutoPaperLab",
     heroPath: "docs/assets/paper_figure_architecture.png",
     heroMime: "image/png",
