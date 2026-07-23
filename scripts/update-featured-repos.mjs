@@ -1,7 +1,9 @@
-// Regenerates the featured project section with one deliberately selected
-// repository: AutoPaperLab. Its card always uses the generated paper architecture
-// figure from the repository README, then splices the linked card between the
-// FEATURED-REPOS markers in README.md. It also generates repository-served
+// Regenerates the featured project section from deliberately selected
+// repositories, in order: township, then AutoPaperLab. Each card always uses a
+// required hero image that the repository's own README still references — the
+// Township social preview and the generated paper architecture figure — then
+// splices the linked cards between the FEATURED-REPOS markers in README.md, one
+// card per project, newest feature first. It also generates repository-served
 // light/dark contribution statistics from GitHub's own annual calendars and
 // keys snake/stat images by their live contribution total and the featured
 // card by its live star count, so changed numbers invalidate GitHub's image
@@ -1015,7 +1017,14 @@ const snakeUpdated = statsUpdated.replace(
 );
 
 let refreshedUrlCount = 0;
-const featuredCacheKey = `${dailyCacheKey}-s${featuredRepos[0].stargazers_count}`;
+// Every featured card carries its own live star suffix so one project's
+// activity can never leave another card cached behind GitHub's image proxy.
+const featuredCacheKeys = new Map(
+  featuredRepos.map((r, index) => [
+    `/${userName}/${userName}/main/assets/featured-${index}.svg`,
+    `${dailyCacheKey}-s${r.stargazers_count}`,
+  ]),
+);
 const contributionCacheKey = `${dailyCacheKey}-c${contributionStats.total}`;
 const updated = snakeUpdated.replace(/https:\/\/[^"'\s>]+/g, (match) => {
   const url = new URL(match);
@@ -1023,9 +1032,11 @@ const updated = snakeUpdated.replace(/https:\/\/[^"'\s>]+/g, (match) => {
     url.hostname === "raw.githubusercontent.com" &&
     url.pathname.includes("/output/github-contribution-grid-snake") &&
     url.pathname.endsWith(".svg");
-  const isFeaturedCard =
-    url.hostname === "raw.githubusercontent.com" &&
-    url.pathname === `/${userName}/${userName}/main/assets/featured-0.svg`;
+  const featuredKey =
+    url.hostname === "raw.githubusercontent.com"
+      ? featuredCacheKeys.get(url.pathname)
+      : undefined;
+  const isFeaturedCard = featuredKey !== undefined;
   const isContributionStats =
     url.hostname === "raw.githubusercontent.com" &&
     url.pathname.startsWith(
@@ -1033,15 +1044,16 @@ const updated = snakeUpdated.replace(/https:\/\/[^"'\s>]+/g, (match) => {
     ) &&
     url.pathname.endsWith(".svg");
   if (!isSnake && !isFeaturedCard && !isContributionStats) return match;
-  url.searchParams.set(
-    "v",
-    isFeaturedCard ? featuredCacheKey : contributionCacheKey,
-  );
+  url.searchParams.set("v", isFeaturedCard ? featuredKey : contributionCacheKey);
   refreshedUrlCount += 1;
   return url.toString();
 });
-if (refreshedUrlCount !== 7) {
-  throw new Error(`expected 7 dynamically refreshed image URLs, found ${refreshedUrlCount}`);
+// Three snake URLs + three contribution-stats URLs + one URL per featured card.
+const expectedRefreshedUrls = 6 + featuredRepos.length;
+if (refreshedUrlCount !== expectedRefreshedUrls) {
+  throw new Error(
+    `expected ${expectedRefreshedUrls} dynamically refreshed image URLs, found ${refreshedUrlCount}`,
+  );
 }
 
 if (updated !== readme) {
