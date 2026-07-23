@@ -23,7 +23,9 @@
 </picture>
 
 <!-- FEATURED-REPOS:START -->
-<a href="https://github.com/StevenWang-CY/AutoPaperLab"><img alt="AutoPaperLab — Autonomous, honesty-first research-to-paper pipeline that turns research briefs into auditable paper packages with verified citations and reproducible experiments. — 2 stars — Python" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/featured-0.svg?v=20260723-r3-s2" width="846" /></a>
+<a href="https://github.com/StevenWang-CY/township"><img alt="township — AI residents deliberate civic questions in a living pixel town — a replayable, scenario-first simulation engine. — 7 stars — Python" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/featured-0.svg?v=20260723-r3-s7" width="846" /></a>
+
+<a href="https://github.com/StevenWang-CY/AutoPaperLab"><img alt="AutoPaperLab — Autonomous, honesty-first research-to-paper pipeline that turns research briefs into auditable paper packages with verified citations and reproducible experiments. — 2 stars — Python" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/featured-1.svg?v=20260723-r3-s2" width="846" /></a>
 <!-- FEATURED-REPOS:END -->
 
 <!-- CONTRIBUTION-STATS:START -->
