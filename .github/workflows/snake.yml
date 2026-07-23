@@ -674,7 +674,8 @@ jobs:
               raise SystemExit("README: legacy contact footer returned")
           PY
           test "$(tail -n 1 README.md)" = "<!-- CONTRIBUTION-STATS:END -->"
-          test "$(grep -o "v=${PROFILE_CACHE_KEY}" README.md | wc -l | tr -d ' ')" = "7"
+          # Three snake URLs + three contribution-stats URLs + one per featured card.
+          test "$(grep -o "v=${PROFILE_CACHE_KEY}" README.md | wc -l | tr -d ' ')" = "8"
           if grep -RIE 'zxpeng2007/zxpeng2007/(output|main/assets)|user=zxpeng2007|Zixuan' README.md assets scripts; then
             echo "reference identity leaked into generated profile files" >&2
             exit 1
@@ -727,12 +728,14 @@ jobs:
           }
           test -s generated/README.md
           test -s generated/assets/featured-0.svg
-          test ! -e generated/assets/featured-1.svg
+          test -s generated/assets/featured-1.svg
+          test ! -e generated/assets/featured-2.svg
           test -s generated/assets/contribution-stats-light.svg
           test -s generated/assets/contribution-stats-dark.svg
-          test "$(find generated/assets -maxdepth 1 -type f -name 'featured-*.svg' | wc -l | tr -d ' ')" = "1"
+          test "$(find generated/assets -maxdepth 1 -type f -name 'featured-*.svg' | wc -l | tr -d ' ')" = "2"
           test "$(find generated/assets -maxdepth 1 -type f -name 'contribution-stats-*.svg' | wc -l | tr -d ' ')" = "2"
-          test "$(find generated -type f | wc -l | tr -d ' ')" = "5"
+          # README + base-sha + two featured cards + two contribution-stats cards.
+          test "$(find generated -type f | wc -l | tr -d ' ')" = "6"
           if find generated -type l -print -quit | grep -q .; then
             echo "generated artifact contains a symbolic link" >&2
             exit 1
