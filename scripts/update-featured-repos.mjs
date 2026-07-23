@@ -1067,7 +1067,7 @@ if (updated !== readme) {
       )
       .join(", "),
     `cache=${dailyCacheKey}`,
-    `featuredCache=${featuredCacheKey}`,
+    `featuredCache=${[...featuredCacheKeys.values()].join(",")}`,
     `contributionCache=${contributionCacheKey}`,
   );
 } else {
