@@ -17,9 +17,9 @@
 </div>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake-dark.svg?v=20260724-r3-c2367" />
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake.svg?v=20260724-r3-c2367" />
-  <img alt="Chuyue “Steven” Wang’s GitHub contribution graph, animated as a snake with a synchronized contribution counter" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake.svg?v=20260724-r3-c2367" />
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake-dark.svg?v=20260724-r3-c2371" />
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake.svg?v=20260724-r3-c2371" />
+  <img alt="Chuyue “Steven” Wang’s GitHub contribution graph, animated as a snake with a synchronized contribution counter" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake.svg?v=20260724-r3-c2371" />
 </picture>
 
 <!-- FEATURED-REPOS:START -->
@@ -31,9 +31,9 @@
 <!-- CONTRIBUTION-STATS:START -->
 <div align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-dark.svg?v=20260724-r3-c2367" />
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260724-r3-c2367" />
-  <img alt="Chuyue “Steven” Wang’s GitHub streak" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260724-r3-c2367" width="58.5%" />
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-dark.svg?v=20260724-r3-c2371" />
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260724-r3-c2371" />
+  <img alt="Chuyue “Steven” Wang’s GitHub streak" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260724-r3-c2371" width="58.5%" />
 </picture><a href="https://chuyuewang.vercel.app/" title="Visit my website"><picture><img align="top" alt="Website" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-website.svg?v=contact-inline-strip-r1" width="12.4%" /></picture></a><a href="https://www.linkedin.com/in/chuyue-wang/" title="Connect on LinkedIn"><picture><img align="top" alt="LinkedIn" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-linkedin.svg?v=contact-inline-strip-r1" width="12.4%" /></picture></a><a href="mailto:stevenwang0805@outlook.com" title="Send me an email"><picture><img align="top" alt="Email" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-email.svg?v=contact-inline-strip-r1" width="12.4%" /></picture></a>
 </div>
 <!-- CONTRIBUTION-STATS:END -->
