@@ -73,7 +73,7 @@ const FEATURED_PROJECTS = [
     heroCrop: "1280x640+0+0",
   },
   {
-    name: "SILKern",
+    name: "SILKern.",
     heroPath: "assets/cover.png",
     heroMime: "image/png",
     heroSourceWidth: 1280,
