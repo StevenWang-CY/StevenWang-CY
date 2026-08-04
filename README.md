@@ -25,7 +25,7 @@
 <!-- FEATURED-REPOS:START -->
 <a href="https://github.com/StevenWang-CY/township"><img alt="township — AI residents deliberate civic questions in a living pixel town — a replayable, scenario-first simulation engine. — 7 stars — Python" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/featured-0.svg?v=20260804-r3-s7" width="846" /></a>
 
-<a href="https://github.com/StevenWang-CY/silkern"><img alt="silkern — SILKern: sparse-index localization kernels for context-parallel decode — deterministic, allocation-free, CUDA-graph-safe — 2 stars — Python" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/featured-1.svg?v=20260804-r3-s2" width="846" /></a>
+<a href="https://github.com/StevenWang-CY/SILKern"><img alt="SILKern — SILKern: sparse-index localization kernels for context-parallel decode — deterministic, allocation-free, CUDA-graph-safe — 2 stars — Python" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/featured-1.svg?v=20260804-r3-s2" width="846" /></a>
 <!-- FEATURED-REPOS:END -->
 
 <!-- CONTRIBUTION-STATS:START -->

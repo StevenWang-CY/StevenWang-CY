@@ -1,5 +1,5 @@
 <svg width="846" height="212" viewBox="0 0 846 212" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <desc>silkern featured project card. Hero source: assets/cover.png.</desc>
+  <desc>SILKern featured project card. Hero source: assets/cover.png.</desc>
   <style>
     text, div { font-family: Cambria, Georgia, 'Times New Roman', serif; }
     .card { fill: #ffffff; stroke: #d1d9e0; }
@@ -19,7 +19,7 @@
     
   </style>
   <rect class="card" x="0.5" y="0.5" width="845" height="211" rx="8"/>
-  <text class="name" x="28" y="48">silkern</text>
+  <text class="name" x="28" y="48">SILKern</text>
   <foreignObject x="28" y="64" width="440" height="94">
     <div xmlns="http://www.w3.org/1999/xhtml" class="desc">SILKern: sparse-index localization kernels for context-parallel decode — deterministic, allocation-free, CUDA-graph-safe</div>
   </foreignObject>
