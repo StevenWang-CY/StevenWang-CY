@@ -385,7 +385,7 @@ jobs:
           grep -Fq '>township</text>' assets/featured-0.svg
           grep -Fq 'Hero source: docs/media/social-preview.png.' assets/featured-0.svg
           grep -Fq '>silkern</text>' assets/featured-1.svg
-          grep -Fq 'Hero source: docs/assets/paper_figure_architecture.png.' assets/featured-1.svg
+          grep -Fq 'Hero source: assets/cover.png.' assets/featured-1.svg
           python3 <<'PY'
           from pathlib import Path
           import json
