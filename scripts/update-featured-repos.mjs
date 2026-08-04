@@ -1,5 +1,5 @@
 // Regenerates the featured project section from deliberately selected
-// repositories, in order: township, then silkern. Each card always uses a
+// repositories, in order: township, then SILKern. Each card always uses a
 // required hero image that the repository's own README still references — the
 // Township social preview and the SILKern media-kit cover — then
 // splices the linked cards between the FEATURED-REPOS markers in README.md, one
@@ -73,7 +73,7 @@ const FEATURED_PROJECTS = [
     heroCrop: "1280x640+0+0",
   },
   {
-    name: "silkern",
+    name: "SILKern",
     heroPath: "assets/cover.png",
     heroMime: "image/png",
     heroSourceWidth: 1280,
