@@ -1,7 +1,7 @@
 // Regenerates the featured project section from deliberately selected
-// repositories, in order: township, then AutoPaperLab. Each card always uses a
+// repositories, in order: township, then silkern. Each card always uses a
 // required hero image that the repository's own README still references — the
-// Township social preview and the generated paper architecture figure — then
+// Township social preview and the SILKern media-kit cover — then
 // splices the linked cards between the FEATURED-REPOS markers in README.md, one
 // card per project, newest feature first. It also generates repository-served
 // light/dark contribution statistics from GitHub's own annual calendars and
@@ -73,14 +73,14 @@ const FEATURED_PROJECTS = [
     heroCrop: "1280x640+0+0",
   },
   {
-    name: "AutoPaperLab",
-    heroPath: "docs/assets/paper_figure_architecture.png",
+    name: "silkern",
+    heroPath: "assets/cover.png",
     heroMime: "image/png",
-    heroSourceWidth: 1284,
-    heroSourceHeight: 758,
-    // Remove only the blank paper margins. This exact 2:1 crop keeps every
-    // labeled component, the lower decision branch, and both figure legends.
-    heroCrop: "1284x642+0+90",
+    heroSourceWidth: 1280,
+    heroSourceHeight: 640,
+    // The repository's media-kit cover is authored at exactly 2:1 - the
+    // SILKern lockup (weave mark, wordmark, and subline) - use the full frame.
+    heroCrop: "1280x640+0+0",
   },
 ];
 
