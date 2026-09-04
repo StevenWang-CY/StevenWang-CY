@@ -20,18 +20,18 @@ I work on faster LLM inference at Penn’s [Distributed Systems Lab](https://dsl
 ### On GitHub
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake-dark.svg?v=20260904-r4-c4602" />
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake.svg?v=20260904-r4-c4602" />
-  <img alt="Chuyue “Steven” Wang’s GitHub contribution graph, animated as a snake with a synchronized contribution counter" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake.svg?v=20260904-r4-c4602" />
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake-dark.svg?v=20260904-r4-c4604" />
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake.svg?v=20260904-r4-c4604" />
+  <img alt="Chuyue “Steven” Wang’s GitHub contribution graph, animated as a snake with a synchronized contribution counter" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/output/github-contribution-grid-snake.svg?v=20260904-r4-c4604" />
 </picture>
 
 <!-- CONTRIBUTION-STATS:START -->
 <picture>
-  <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-mobile-dark.svg?v=20260904-r4-c4602" />
-  <source media="(max-width: 600px)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-mobile-light.svg?v=20260904-r4-c4602" />
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-dark.svg?v=20260904-r4-c4602" />
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260904-r4-c4602" />
-  <img alt="4,602 total contributions; 74-day current streak; 74-day longest streak" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260904-r4-c4602" width="846" />
+  <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-mobile-dark.svg?v=20260904-r4-c4604" />
+  <source media="(max-width: 600px)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-mobile-light.svg?v=20260904-r4-c4604" />
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-dark.svg?v=20260904-r4-c4604" />
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260904-r4-c4604" />
+  <img alt="4,604 total contributions; 74-day current streak; 74-day longest streak" src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contribution-stats-light.svg?v=20260904-r4-c4604" width="846" />
 </picture>
 <!-- CONTRIBUTION-STATS:END -->
 
