@@ -1,7 +1,7 @@
 // Refreshes the selected Township and SILKern projects, plus light/dark
 // contribution statistics. Curated artwork comes directly from each repo;
 // missing artwork retains the last published poster so metrics keep updating.
-// Mobile and desktop cards share the same live stars and contribution snapshot.
+// The original project cards and streak/contact strip share one live snapshot.
 // Content-based URL suffixes invalidate GitHub's image cache when counts change.
 //
 // SVG cards are used because GitHub sanitizes CSS out of README HTML:
@@ -38,7 +38,7 @@ const readmeFile = path.join(repoRoot, "README.md");
 // The date supplies a stable daily base; live star/contribution suffixes change
 // rendered URLs within that day. The revision changes whenever the image
 // contract changes so GitHub's image proxy cannot retain an older design.
-const CACHE_REVISION = "r4";
+const CACHE_REVISION = "r5";
 const dailyCacheKey =
   process.env.PROFILE_CACHE_KEY ??
   `${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${CACHE_REVISION}`;
@@ -60,9 +60,6 @@ if (
 const FEATURED_PROJECTS = [
   {
     name: "township",
-    title: "Township",
-    category: "AGENT SIMULATION",
-    summary: "AI residents deliberate civic questions in a living pixel town, with replayable scenarios and decisions.",
     heroPath: "docs/media/social-preview.png",
     heroMime: "image/png",
     heroSourceWidth: 1280,
@@ -73,9 +70,6 @@ const FEATURED_PROJECTS = [
   },
   {
     name: "SILKern.",
-    title: "SILKern",
-    category: "INFERENCE SYSTEMS",
-    summary: "Deterministic sparse-index localization for context-parallel decode. Allocation-free and CUDA-graph-safe.",
     heroPath: "assets/cover.png",
     heroMime: "image/png",
     heroSourceWidth: 1280,
@@ -174,9 +168,6 @@ const featuredRepos = await Promise.all(
     }
     return {
       ...repo,
-      profileTitle: project.title,
-      profileCategory: project.category,
-      profileSummary: project.summary,
       profileHeroPath: project.heroPath,
       profileHeroMime: project.heroMime,
       profileHeroSourceWidth: project.heroSourceWidth,
@@ -671,38 +662,34 @@ const [images, contributionStats] = await Promise.all([
 ]);
 
 for (const variant of ["light", "dark"]) {
-  for (const mobile of [false, true]) {
-    const relativeFile = `assets/contribution-stats-${mobile ? "mobile-" : ""}${variant}.svg`;
-    const file = path.join(repoRoot, relativeFile);
-    const svg = renderContributionStats(contributionStats, variant, {
-      mobile, userName, profileDate: isoDate(profileDate),
-    });
-    if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== svg) {
-      writeFileAtomic(file, svg);
-      console.log(`wrote ${relativeFile}`);
-    }
+  const relativeFile = `assets/contribution-stats-${variant}.svg`;
+  const file = path.join(repoRoot, relativeFile);
+  const svg = renderContributionStats(contributionStats, variant, {
+    userName, profileDate: isoDate(profileDate),
+  });
+  if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== svg) {
+    writeFileAtomic(file, svg);
+    console.log(`wrote ${relativeFile}`);
   }
 }
 
 const assetRoot = `https://raw.githubusercontent.com/${userName}/${userName}/main/assets`;
 const anchors = featuredRepos.map((r, i) => {
-  for (const mobile of [false, true]) {
-    const relativeFile = `assets/featured-${i}${mobile ? "-mobile" : ""}.svg`;
-    const file = path.join(repoRoot, relativeFile);
-    const svg = renderProjectCard(r, images[i], { mobile });
-    if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== svg) {
-      writeFileAtomic(file, svg);
-      console.log(`wrote ${relativeFile}`);
-    }
+  const relativeFile = `assets/featured-${i}.svg`;
+  const file = path.join(repoRoot, relativeFile);
+  const svg = renderProjectCard(r, images[i]);
+  if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== svg) {
+    writeFileAtomic(file, svg);
+    console.log(`wrote ${relativeFile}`);
   }
-  return `<a href="${r.html_url}"><picture><source media="(max-width: 600px)" srcset="${assetRoot}/featured-${i}-mobile.svg" /><img alt="${escAttr(projectAlt(r))}" src="${assetRoot}/featured-${i}.svg" width="846" /></picture></a>`;
+  return `<a href="${r.html_url}"><img alt="${escAttr(projectAlt(r))}" src="${assetRoot}/featured-${i}.svg" width="846" /></a>`;
 });
 
 for (const file of fs.readdirSync(assetsDir)) {
-  const match = /^featured-(\d+)(?:-mobile)?\.svg$/.exec(file);
-  if (match && Number(match[1]) >= featuredRepos.length) {
+  const match = /^featured-(\d+)(-mobile)?\.svg$/.exec(file);
+  if ((match && (match[2] || Number(match[1]) >= featuredRepos.length)) || /^contribution-stats-mobile-(light|dark)\.svg$/.test(file)) {
     fs.rmSync(path.join(assetsDir, file));
-    console.log(`removed stale assets/${file}`);
+    console.log(`removed retired assets/${file}`);
   }
 }
 
@@ -725,14 +712,14 @@ if (
 const featuredUpdated =
   readme.slice(0, start + START.length) + "\n" + block + "\n" + readme.slice(end);
 
-const statsAlt = `${commaNumber(contributionStats.total)} total contributions; ${contributionStats.currentStreak}-day current streak; ${contributionStats.longestStreak}-day longest streak`;
-const statsBlock = `<picture>
-  <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="${assetRoot}/contribution-stats-mobile-dark.svg" />
-  <source media="(max-width: 600px)" srcset="${assetRoot}/contribution-stats-mobile-light.svg" />
+const statsAlt = `Chuyue “Steven” Wang’s GitHub streak`;
+const statsBlock = `<div align="center">
+<picture>
   <source media="(prefers-color-scheme: dark)" srcset="${assetRoot}/contribution-stats-dark.svg" />
   <source media="(prefers-color-scheme: light)" srcset="${assetRoot}/contribution-stats-light.svg" />
-  <img alt="${escAttr(statsAlt)}" src="${assetRoot}/contribution-stats-light.svg" width="846" />
-</picture>`;
+  <img alt="${escAttr(statsAlt)}" src="${assetRoot}/contribution-stats-light.svg" width="58.5%" />
+</picture><a href="https://chuyuewang.vercel.app/" title="Visit my website"><picture><img align="top" alt="Website" src="${assetRoot}/contact-website.svg?v=contact-inline-strip-r1" width="12.4%" /></picture></a><a href="https://www.linkedin.com/in/chuyue-wang/" title="Connect on LinkedIn"><picture><img align="top" alt="LinkedIn" src="${assetRoot}/contact-linkedin.svg?v=contact-inline-strip-r1" width="12.4%" /></picture></a><a href="mailto:stevenwang0805@outlook.com" title="Send me an email"><picture><img align="top" alt="Email" src="${assetRoot}/contact-email.svg?v=contact-inline-strip-r1" width="12.4%" /></picture></a>
+</div>`;
 const STATS_START = "<!-- CONTRIBUTION-STATS:START -->";
 const STATS_END = "<!-- CONTRIBUTION-STATS:END -->";
 const statsStart = featuredUpdated.indexOf(STATS_START);
@@ -768,10 +755,10 @@ let refreshedUrlCount = 0;
 // Every featured card carries its own live star suffix so one project's
 // activity can never leave another card cached behind GitHub's image proxy.
 const featuredCacheKeys = new Map(
-  featuredRepos.flatMap((r, index) => [false, true].map((mobile) => [
-    `/${userName}/${userName}/main/assets/featured-${index}${mobile ? "-mobile" : ""}.svg`,
+  featuredRepos.map((r, index) => [
+    `/${userName}/${userName}/main/assets/featured-${index}.svg`,
     `${dailyCacheKey}-s${r.stargazers_count}`,
-  ])),
+  ]),
 );
 const contributionCacheKey = `${dailyCacheKey}-c${contributionStats.total}`;
 const updated = snakeUpdated.replace(/https:\/\/[^"'\s>]+/g, (match) => {
@@ -796,8 +783,8 @@ const updated = snakeUpdated.replace(/https:\/\/[^"'\s>]+/g, (match) => {
   refreshedUrlCount += 1;
   return url.toString();
 });
-// Three snake URLs + five stats URLs + two URLs per featured project.
-const expectedRefreshedUrls = 8 + featuredRepos.length * 2;
+// Three snake URLs + three stats URLs + one URL per featured project.
+const expectedRefreshedUrls = 6 + featuredRepos.length;
 if (refreshedUrlCount !== expectedRefreshedUrls) {
   throw new Error(
     `expected ${expectedRefreshedUrls} dynamically refreshed image URLs, found ${refreshedUrlCount}`,

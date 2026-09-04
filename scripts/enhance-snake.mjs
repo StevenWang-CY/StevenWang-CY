@@ -10,7 +10,7 @@ import {
   writePublicContributionsSnapshot,
 } from "./public-contributions.mjs";
 
-const COUNTER_REVISION = "r4";
+const COUNTER_REVISION = "r5";
 const COUNTER_LINE_HEIGHT = 18;
 const MAX_SVG_BYTES = 1024 * 1024;
 const OUTPUT_SVG_MAX_BYTES = 256 * 1024;
@@ -355,7 +355,7 @@ async function main() {
   const [, , userName, cacheKey, snapshotPath, ...svgFiles] = process.argv;
   if (!userName || !cacheKey || !snapshotPath || svgFiles.length !== 2) {
     throw new Error(
-      "usage: node scripts/enhance-snake.mjs <github-user> <YYYYMMDD-r4> <snapshot.json> <light.svg> <dark.svg>",
+      "usage: node scripts/enhance-snake.mjs <github-user> <YYYYMMDD-r5> <snapshot.json> <light.svg> <dark.svg>",
     );
   }
   const profileDate = parseProfileDate(cacheKey);

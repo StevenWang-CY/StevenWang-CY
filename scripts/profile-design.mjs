@@ -1,113 +1,246 @@
-// Repository-served SVGs: no remote fonts, scripts, or external image loads.
-const SERIF = "Georgia, 'Times New Roman', serif";
-const SANS = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-const MONO = "ui-monospace, SFMono-Regular, Consolas, monospace";
-
-export const PALETTES = {
-  light: { surface: "#FAF9F6", ink: "#292D30", muted: "#596168", line: "#DDDCD6", accent: "#856B47" },
-  dark: { surface: "#121920", ink: "#E6E2D9", muted: "#A3ABB0", line: "#303A43", accent: "#C4AD87" },
-};
-
-export const escapeXml = (value) => String(value)
-  .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
-  .replaceAll('"', "&quot;").replaceAll("'", "&apos;");
-
-function wrap(text, limit) {
-  const lines = [];
-  for (const word of text.split(/\s+/)) {
-    const last = lines.length - 1;
-    if (last < 0 || `${lines[last]} ${word}`.length > limit) lines.push(word);
-    else lines[last] += ` ${word}`;
-  }
-  return lines;
-}
-
-function themeCss() {
-  const rules = (p) => `.surface{fill:${p.surface};stroke:${p.line}}.ink{fill:${p.ink}}.muted{fill:${p.muted}}.accent{fill:${p.accent}}.rule{stroke:${p.line}}`;
-  return `${rules(PALETTES.light)}@media(prefers-color-scheme:dark){${rules(PALETTES.dark)}}`;
-}
-
-function flipbookCss(frameCount, cycleSec) {
-  let css = `.gf{opacity:0;animation-duration:${cycleSec}s;animation-timing-function:steps(1,end);animation-iteration-count:infinite}`;
-  for (let i = 0; i < frameCount; i++) {
-    const start = (i / frameCount * 100).toFixed(4);
-    const end = ((i + 1) / frameCount * 100).toFixed(4);
-    css += `@keyframes frame${i}{0%{opacity:${i === 0 ? 1 : 0}}${start}%{opacity:1}${end}%{opacity:0}100%{opacity:0}}.g${i}{animation-name:frame${i}}`;
-  }
-  return `${css}@media(prefers-reduced-motion:reduce){.gf{animation:none;opacity:0}.g0{opacity:1}}`;
-}
+// Original project-card and streak presentation, restored from the profile's
+// pre-redesign renderer. Live data and artwork fallbacks remain independent.
+const esc = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+const commaNumber = (value) => Number(value).toLocaleString("en-US");
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export function projectAlt(repo) {
-  return [repo.profileTitle, repo.profileSummary,
+  return [repo.name, repo.description,
     `${repo.stargazers_count} ${repo.stargazers_count === 1 ? "star" : "stars"}`, repo.language]
     .filter(Boolean).join(" — ");
 }
 
-export function renderProjectCard(repo, image, { mobile = false } = {}) {
-  const W = mobile ? 400 : 846;
-  const H = mobile ? 350 : 212;
-  const textX = mobile ? 22 : 28;
-  const imageX = mobile ? 22 : 502;
-  const imageY = mobile ? 162 : 24;
-  const imageW = mobile ? 356 : 328;
-  const imageH = imageW / 2;
-  const lines = wrap(repo.profileSummary, mobile ? 44 : 52);
-  const title = escapeXml(projectAlt(repo));
-  const box = `x="${imageX}" y="${imageY}" width="${imageW}" height="${imageH}"`;
-  const frames = image?.kind === "anim" ? image.frames : image ? [image.base64] : [];
-  const imageMarkup = frames.map((frame, index) =>
-    `<image${frames.length > 1 ? ` class="gf g${index}"` : ""} ${box} preserveAspectRatio="xMidYMid meet" href="data:${image.mime};base64,${frame}"/>`).join("\n");
-  const metaY = mobile ? 145 : 185;
+const LANG_COLORS = {
+  Python: "#3572A5",
+  "Jupyter Notebook": "#DA5B0B",
+  HTML: "#e34c26",
+  CSS: "#663399",
+  JavaScript: "#f1e05a",
+  TypeScript: "#3178c6",
+  "C++": "#f34b7d",
+  C: "#555555",
+  "C#": "#178600",
+  Rust: "#dea584",
+  Go: "#00ADD8",
+  Java: "#b07219",
+  Kotlin: "#A97BFF",
+  Swift: "#F05138",
+  Shell: "#89e051",
+  MATLAB: "#e16737",
+  Cuda: "#3A4E3A",
+};
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="title" data-project="${escapeXml(repo.name)}" data-stars="${repo.stargazers_count}">
-  <title id="title">${title}</title>
-  <desc>${escapeXml(repo.profileSummary)}</desc>
-  <style>${themeCss()}
-    text{font-family:${SANS}}.category{font-family:${MONO};font-size:10px;letter-spacing:1.5px}.name{font-family:${SERIF};font-size:30px}.summary{font-size:${mobile ? 14 : 16}px}.meta{font-family:${MONO};font-size:12px}
-    ${frames.length > 1 ? flipbookCss(frames.length, image.cycleSec) : ""}
+const STAR_PATH =
+  "M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z";
+
+function fmtPct(n) {
+  return n.toFixed(3).replace(/\.?0+$/, "");
+}
+
+// Flipbook CSS: frame i is fully visible for its 1/F share of the
+// cycle and hidden otherwise, with explicit 0% stops and near-instant
+// (0.01%) snaps between stops — without a 0% stop browsers would tween
+// opacity across the whole waiting period.
+function flipbookCss(frameCount, cycleSec) {
+  const EPS = 0.01;
+  let css = `.gf{opacity:0;animation-duration:${cycleSec}s;animation-timing-function:linear;animation-iteration-count:infinite;animation-name:none}`;
+  for (let i = 0; i < frameCount; i++) {
+    const a = (i / frameCount) * 100;
+    const b = ((i + 1) / frameCount) * 100;
+    let kf;
+    if (i === 0) {
+      kf = `0%,${fmtPct(b)}%{opacity:1}${fmtPct(b + EPS)}%,100%{opacity:0}`;
+    } else if (i === frameCount - 1) {
+      kf = `0%,${fmtPct(a - EPS)}%{opacity:0}${fmtPct(a)}%,100%{opacity:1}`;
+    } else {
+      kf = `0%,${fmtPct(a - EPS)}%{opacity:0}${fmtPct(a)}%,${fmtPct(b)}%{opacity:1}${fmtPct(b + EPS)}%,100%{opacity:0}`;
+    }
+    css += `@keyframes g${i}{${kf}}.gf.g${i}{animation-name:g${i}}`;
+  }
+  return `${css}@media (prefers-reduced-motion:reduce){.gf{animation:none!important;opacity:0}.gf.g0{opacity:1}}`;
+}
+
+export function renderProjectCard(r, image) {
+  const W = 846;
+  const H = 212;
+  const IMG_Y = (H - 164) / 2;
+  const META_BASELINE = H - 27;
+  const FONT = "Cambria, Georgia, 'Times New Roman', serif";
+  const langColor = LANG_COLORS[r.language] ?? "#8b949e";
+  const stars = r.stargazers_count;
+
+  let imagePart = "";
+  let flipCss = "";
+  if (image) {
+    const box = `x="502" y="${IMG_Y}" width="328" height="164"`;
+    const clip = `  <clipPath id="hero"><rect ${box} rx="6"/></clipPath>`;
+    const frameRect = `  <rect class="frame" x="502.5" y="${IMG_Y + 0.5}" width="327" height="163" rx="6"/>`;
+    if (image.kind === "anim") {
+      flipCss = flipbookCss(image.frames.length, image.cycleSec);
+      const layers = image.frames
+        .map(
+          (b64, i) =>
+            `    <image class="gf g${i}" ${box} preserveAspectRatio="xMidYMid slice" href="data:${image.mime};base64,${b64}"/>`,
+        )
+        .join("\n");
+      imagePart = [clip, `  <g clip-path="url(#hero)">`, layers, `  </g>`, frameRect].join("\n");
+    } else {
+      imagePart = [
+        clip,
+        `  <image ${box} preserveAspectRatio="xMidYMid slice" clip-path="url(#hero)" href="data:${image.mime};base64,${image.base64}"/>`,
+        frameRect,
+      ].join("\n");
+    }
+  }
+
+  const langPart = r.language
+    ? [
+        `  <circle cx="122" cy="${META_BASELINE - 5}" r="6" fill="${langColor}"/>`,
+        `  <text class="meta" x="134" y="${META_BASELINE}">${esc(r.language)}</text>`,
+      ].join("\n")
+    : "";
+  const cardDescription = [
+    `${r.name} featured project card.`,
+    r.profileHeroPath ? `Hero source: ${r.profileHeroPath}.` : "",
+  ].filter(Boolean).join(" ");
+
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" data-project="${esc(r.name)}" data-stars="${stars}">
+  <title>${esc(projectAlt(r))}</title>
+  <desc>${esc(cardDescription)}</desc>
+  <style>
+    text, div { font-family: ${FONT}; }
+    .card { fill: #ffffff; stroke: #d1d9e0; }
+    .frame { fill: none; stroke: #d1d9e0; }
+    .name { fill: #0969da; font-size: 22px; font-weight: 700; }
+    .desc { font-family: ${FONT}; font-size: 15px; line-height: 1.5; color: #59636e; margin: 0; overflow: hidden; overflow-wrap: anywhere; max-height: 90px; }
+    .meta { fill: #59636e; font-size: 14px; }
+    .star { fill: #59636e; }
+    @media (prefers-color-scheme: dark) {
+      .card { fill: #161b22; stroke: #3d444d; }
+      .frame { stroke: #3d444d; }
+      .name { fill: #4493f8; }
+      .desc { color: #9198a1; }
+      .meta { fill: #9198a1; }
+      .star { fill: #9198a1; }
+    }
+    ${flipCss}
   </style>
-  <rect class="surface" x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" rx="6"/>
-  <text class="category accent" x="${textX}" y="${mobile ? 26 : 31}">${escapeXml(repo.profileCategory)}</text>
-  <text class="name ink" x="${textX}" y="${mobile ? 62 : 73}">${escapeXml(repo.profileTitle)}</text>
-  ${lines.map((line, index) => `<text class="summary muted" x="${textX}" y="${(mobile ? 87 : 104) + index * (mobile ? 19 : 23)}">${escapeXml(line)}</text>`).join("\n  ")}
-  <text class="meta muted" x="${textX}" y="${metaY}">☆ ${repo.stargazers_count} ${repo.stargazers_count === 1 ? "star" : "stars"}${repo.language ? ` · ${escapeXml(repo.language)}` : ""}</text>
-  ${image ? `<defs><clipPath id="hero"><rect ${box} rx="3"/></clipPath></defs><g clip-path="url(#hero)">${imageMarkup}</g>` : `<text class="meta muted" x="${imageX + imageW / 2}" y="${imageY + imageH / 2}" text-anchor="middle">View repository ↗</text>`}
-</svg>\n`;
+  <rect class="card" x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" rx="8"/>
+  <text class="name" x="28" y="48">${esc(r.name)}</text>
+  <foreignObject x="28" y="64" width="440" height="94">
+    <div xmlns="http://www.w3.org/1999/xhtml" class="desc">${esc(r.description ?? "")}</div>
+  </foreignObject>
+  <g transform="translate(28, ${META_BASELINE - 17})"><path class="star" d="${STAR_PATH}"/></g>
+  <text class="meta" x="50" y="${META_BASELINE}">${stars}</text>
+${langPart}
+${imagePart}
+</svg>
+`;
 }
 
-function dateLabel(value, includeYear = false) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short", day: "numeric", ...(includeYear ? { year: "numeric" } : {}), timeZone: "UTC",
-  }).format(new Date(`${value}T00:00:00Z`));
+function pengDate(value, includeYear = false) {
+  const [year, month, day] = value.split("-").map(Number);
+  return `${MONTH_NAMES[month - 1]} ${day}${includeYear ? `, ${year}` : ""}`;
 }
 
-function dateRange(start, end) {
-  if (!start || !end) return "No active streak";
-  if (start === end) return dateLabel(start);
-  const years = start.slice(0, 4) !== end.slice(0, 4);
-  return `${dateLabel(start, years)} – ${dateLabel(end, years)}`;
+function pengRange(start, end, profileDate) {
+  if (!start || !end) return pengDate(profileDate);
+  if (start === end) return pengDate(start);
+  const spansYears = start.slice(0, 4) !== end.slice(0, 4);
+  return `${pengDate(start, spansYears)} - ${pengDate(end, spansYears)}`;
 }
 
-export function renderContributionStats(stats, theme, { mobile = false, userName, profileDate } = {}) {
-  const p = PALETTES[theme];
-  const W = mobile ? 400 : 846;
-  const H = mobile ? 214 : 132;
-  const cells = [
-    { value: stats.total.toLocaleString("en-US"), label: "Total contributions", range: stats.firstActiveDate ? `Since ${dateLabel(stats.firstActiveDate, true)}` : "No contributions yet" },
-    { value: String(stats.currentStreak), label: "Current streak · days", range: dateRange(stats.currentStartDate, stats.currentEndDate) },
-    { value: String(stats.longestStreak), label: "Longest streak · days", range: dateRange(stats.longestStartDate, stats.longestEndDate) },
-  ];
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="title" data-total="${stats.total}" data-current-streak="${stats.currentStreak}" data-longest-streak="${stats.longestStreak}" data-as-of="${profileDate}">
-  <title id="title">${escapeXml(userName)} GitHub contribution statistics</title>
-  <desc>${stats.total.toLocaleString("en-US")} total contributions. ${stats.currentStreak}-day current streak. ${stats.longestStreak}-day longest streak.</desc>
-  <style>text{font-family:${SANS};text-anchor:middle}.number{font-family:${SERIF};font-size:38px;fill:${p.ink}}.label{font-size:14px;fill:${p.ink}}.range{font-size:12px;fill:${p.muted}}</style>
-  <path d="M0 .5H${W}M0 ${H - .5}H${W}${mobile ? "M200 118V197" : "M282 25V107M564 25V107"}" fill="none" stroke="${p.line}"/>
-  ${cells.map((cell, index) => {
-    const x = mobile ? index === 0 ? 200 : index === 1 ? 100 : 300 : 141 + index * 282;
-    const y = mobile ? index === 0 ? 42 : 147 : 51;
-    return `<g data-metric="${index}"><text class="number" x="${x}" y="${y}">${cell.value}</text><text class="label" x="${x}" y="${y + 25}">${cell.label}</text><text class="range" x="${x}" y="${y + 46}">${escapeXml(cell.range)}</text></g>`;
-  }).join("\n  ")}
-</svg>\n`;
+// Visual geometry and animation timings follow the MIT-licensed default card
+// used by Peng. See THIRD_PARTY_NOTICES.md for source and license details.
+export function renderContributionStats(stats, theme, { userName, profileDate }) {
+  const dark = theme === "dark";
+  const background = dark ? "#151515" : "#FFFEFE";
+  const primary = dark ? "#FEFEFE" : "#151515";
+  const muted = dark ? "#9E9E9E" : "#464646";
+  const divider = "#E4E2E2";
+  const accent = "#FB8C00";
+  const totalRange = stats.firstActiveDate
+    ? `${pengDate(stats.firstActiveDate, true)} - Present`
+    : "No contributions yet";
+  const currentRange = pengRange(stats.currentStartDate, stats.currentEndDate, profileDate);
+  const longestRange = pengRange(stats.longestStartDate, stats.longestEndDate, profileDate);
+  const description = [
+    `${userName} GitHub streak statistics.`,
+    `${commaNumber(stats.total)} total contributions.`,
+    `${stats.currentStreak}-day current streak.`,
+    `${stats.longestStreak}-day longest streak.`,
+  ].join(" ");
+
+  return `<svg xmlns='http://www.w3.org/2000/svg' style='isolation: isolate' viewBox='0 0 495 195' width='495px' height='195px' direction='ltr' role='img' data-total='${stats.total}' data-current-streak='${stats.currentStreak}' data-longest-streak='${stats.longestStreak}' data-as-of='${profileDate}'>
+  <title>GitHub streak statistics</title>
+  <desc>${esc(description)}</desc>
+  <style>
+    @keyframes currstreak {
+      0% { font-size: 3px; opacity: 0.2; }
+      80% { font-size: 34px; opacity: 1; }
+      100% { font-size: 28px; opacity: 1; }
+    }
+    @keyframes fadein {
+      0% { opacity: 0; }
+      100% { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      [style*='animation'] { animation: none !important; opacity: 1 !important; }
+    }
+  </style>
+  <defs>
+    <clipPath id='outer_rectangle'>
+      <rect width='495' height='195' rx='4.5'/>
+    </clipPath>
+    <mask id='mask_out_ring_behind_fire'>
+      <rect width='495' height='195' fill='white'/>
+      <ellipse cx='247.5' cy='32' rx='13' ry='18' fill='black'/>
+    </mask>
+  </defs>
+  <g clip-path='url(#outer_rectangle)'>
+    <rect stroke='#000000' stroke-opacity='0' fill='${background}' rx='4.5' x='0.5' y='0.5' width='494' height='194'/>
+    <line x1='165' y1='28' x2='165' y2='170' vector-effect='non-scaling-stroke' stroke-width='1' stroke='${divider}' stroke-linejoin='miter' stroke-linecap='square' stroke-miterlimit='3'/>
+    <line x1='330' y1='28' x2='330' y2='170' vector-effect='non-scaling-stroke' stroke-width='1' stroke='${divider}' stroke-linejoin='miter' stroke-linecap='square' stroke-miterlimit='3'/>
+
+    <g transform='translate(82.5, 48)'>
+      <text x='0' y='32' text-anchor='middle' fill='${primary}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='700' font-size='28px' style='animation: fadein 0.5s linear 0.6s both'>${esc(commaNumber(stats.total))}</text>
+    </g>
+    <g transform='translate(82.5, 84)'>
+      <text x='0' y='32' text-anchor='middle' fill='${primary}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='400' font-size='14px' style='animation: fadein 0.5s linear 0.7s both'>Total Contributions</text>
+    </g>
+    <g transform='translate(82.5, 114)'>
+      <text x='0' y='32' text-anchor='middle' fill='${muted}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='400' font-size='12px' style='animation: fadein 0.5s linear 0.8s both'>${esc(totalRange)}</text>
+    </g>
+
+    <g transform='translate(247.5, 108)'>
+      <text x='0' y='32' text-anchor='middle' fill='${accent}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='700' font-size='14px' style='animation: fadein 0.5s linear 0.9s both'>Current Streak</text>
+    </g>
+    <g transform='translate(247.5, 145)'>
+      <text x='0' y='21' text-anchor='middle' fill='${muted}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='400' font-size='12px' style='animation: fadein 0.5s linear 0.9s both'>${esc(currentRange)}</text>
+    </g>
+    <g mask='url(#mask_out_ring_behind_fire)'>
+      <circle cx='247.5' cy='71' r='40' fill='none' stroke='${accent}' stroke-width='5' style='animation: fadein 0.5s linear 0.4s both'/>
+    </g>
+    <g transform='translate(247.5, 19.5)' stroke-opacity='0' style='animation: fadein 0.5s linear 0.6s both'>
+      <path d='M -12 -0.5 L 15 -0.5 L 15 23.5 L -12 23.5 L -12 -0.5 Z' fill='none'/>
+      <path d='M 1.5 0.67 C 1.5 0.67 2.24 3.32 2.24 5.47 C 2.24 7.53 0.89 9.2 -1.17 9.2 C -3.23 9.2 -4.79 7.53 -4.79 5.47 L -4.76 5.11 C -6.78 7.51 -8 10.62 -8 13.99 C -8 18.41 -4.42 22 0 22 C 4.42 22 8 18.41 8 13.99 C 8 8.6 5.41 3.79 1.5 0.67 Z M -0.29 19 C -2.07 19 -3.51 17.6 -3.51 15.86 C -3.51 14.24 -2.46 13.1 -0.7 12.74 C 1.07 12.38 2.9 11.53 3.92 10.16 C 4.31 11.45 4.51 12.81 4.51 14.2 C 4.51 16.85 2.36 19 -0.29 19 Z' fill='${accent}'/>
+    </g>
+    <g transform='translate(247.5, 48)'>
+      <text x='0' y='32' text-anchor='middle' fill='${primary}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='700' font-size='28px' style='animation: currstreak 0.6s linear forwards'>${esc(String(stats.currentStreak))}</text>
+    </g>
+
+    <g transform='translate(412.5, 48)'>
+      <text x='0' y='32' text-anchor='middle' fill='${primary}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='700' font-size='28px' style='animation: fadein 0.5s linear 1.2s both'>${esc(String(stats.longestStreak))}</text>
+    </g>
+    <g transform='translate(412.5, 84)'>
+      <text x='0' y='32' text-anchor='middle' fill='${primary}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='400' font-size='14px' style='animation: fadein 0.5s linear 1.3s both'>Longest Streak</text>
+    </g>
+    <g transform='translate(412.5, 114)'>
+      <text x='0' y='32' text-anchor='middle' fill='${muted}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='400' font-size='12px' style='animation: fadein 0.5s linear 1.4s both'>${esc(longestRange)}</text>
+    </g>
+  </g>
+</svg>
+`;
 }
 
 // Artwork is optional presentation. If an upstream asset moves or is briefly

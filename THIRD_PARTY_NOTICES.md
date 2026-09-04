@@ -17,9 +17,20 @@ The website contact icon embeds the profile owner's public GitHub avatar,
 retrieved from `https://avatars.githubusercontent.com/u/203932027?v=4` on
 2026-07-12.
 
+## Open-source contributor logos
+
+The vLLM and SGLang marks identify the open-source projects this profile
+contributes to. The images are unmodified copies of their official artwork:
+
+- [vLLM symbol](https://github.com/vllm-project/vllm/blob/main/docs/assets/logos/vllm-logo-only-light.png)
+- [SGLang symbol](https://github.com/sgl-project/sglang/blob/main/assets/logo_square.png)
+
+The marks belong to their respective projects. Links beside each logo identify
+the specific repositories; their use does not imply project sponsorship.
+
 ## GitHub streak-statistics presentation
 
-Earlier versions of the GitHub streak-statistics presentation were adapted from
+The restored GitHub streak-statistics presentation and animation timing are adapted from
 [`DenverCoder1/github-readme-streak-stats`](https://github.com/DenverCoder1/github-readme-streak-stats),
 which is distributed under the MIT License. The notice is retained below:
 

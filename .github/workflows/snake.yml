@@ -62,7 +62,7 @@ jobs:
           if [[ "$profile_date" != "$GENERATION_START_DATE" ]]; then
             rerun_snake=true
           fi
-          profile_cache_key="${profile_date}-r4"
+          profile_cache_key="${profile_date}-r5"
           printf 'PROFILE_CACHE_KEY=%s\n' "$profile_cache_key" >> "$GITHUB_ENV"
           printf 'profile-cache-key=%s\n' "$profile_cache_key" >> "$GITHUB_OUTPUT"
           printf 'rerun-snake=%s\n' "$rerun_snake" >> "$GITHUB_OUTPUT"
@@ -337,7 +337,7 @@ jobs:
           SHARED_PROFILE_CACHE_KEY: ${{ needs.generate-snake.outputs.profile-cache-key }}
         run: |
           set -euo pipefail
-          [[ "$SHARED_PROFILE_CACHE_KEY" =~ ^[0-9]{8}-r4$ ]]
+          [[ "$SHARED_PROFILE_CACHE_KEY" =~ ^[0-9]{8}-r5$ ]]
           printf 'PROFILE_CACHE_KEY=%s\n' "$SHARED_PROFILE_CACHE_KEY" >> "$GITHUB_ENV"
 
       - name: install ImageMagick for posters and GIF flipbooks
@@ -406,17 +406,13 @@ jobs:
           test -s generated/README.md
           test -s generated/assets/featured-0.svg
           test -s generated/assets/featured-1.svg
-          test -s generated/assets/featured-0-mobile.svg
-          test -s generated/assets/featured-1-mobile.svg
           test ! -e generated/assets/featured-2.svg
           test -s generated/assets/contribution-stats-light.svg
           test -s generated/assets/contribution-stats-dark.svg
-          test -s generated/assets/contribution-stats-mobile-light.svg
-          test -s generated/assets/contribution-stats-mobile-dark.svg
-          test "$(find generated/assets -maxdepth 1 -type f -name 'featured-*.svg' | wc -l | tr -d ' ')" = "4"
-          test "$(find generated/assets -maxdepth 1 -type f -name 'contribution-stats-*.svg' | wc -l | tr -d ' ')" = "4"
-          # README + base-sha + four project cards + four contribution-statistics variants.
-          test "$(find generated -type f | wc -l | tr -d ' ')" = "10"
+          test "$(find generated/assets -maxdepth 1 -type f -name 'featured-*.svg' | wc -l | tr -d ' ')" = "2"
+          test "$(find generated/assets -maxdepth 1 -type f -name 'contribution-stats-*.svg' | wc -l | tr -d ' ')" = "2"
+          # README + base-sha + two project cards + light/dark streak cards.
+          test "$(find generated -type f | wc -l | tr -d ' ')" = "6"
           if find generated -type l -print -quit | grep -q .; then
             echo "generated artifact contains a symbolic link" >&2
             exit 1
