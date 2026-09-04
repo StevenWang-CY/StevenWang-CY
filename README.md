@@ -5,7 +5,7 @@
 
 ### Chuyue “Steven” Wang
 
-I work on faster LLM inference at Penn’s [Distributed Systems Lab](https://dsl.cis.upenn.edu/).
+I am an Agent Engineering intern in [Kosa](https://www.getkosa.ai/), work on faster LLM inference at Penn’s [Distributed Systems Lab](https://dsl.cis.upenn.edu/) and actively contribute to the open source communities.
 
 <sub>Open-source contributions</sub>
 
