@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="214" viewBox="0 0 400 214" role="img" aria-labelledby="title" data-total="4598" data-current-streak="74" data-longest-streak="74" data-as-of="2026-09-04">
+  <title id="title">StevenWang-CY GitHub contribution statistics</title>
+  <desc>4,598 total contributions. 74-day current streak. 74-day longest streak.</desc>
+  <style>text{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;text-anchor:middle}.number{font-family:Georgia, 'Times New Roman', serif;font-size:38px;fill:#E6E2D9}.label{font-size:14px;fill:#E6E2D9}.range{font-size:12px;fill:#A3ABB0}</style>
+  <path d="M0 .5H400M0 213.5H400M200 118V197" fill="none" stroke="#303A43"/>
+  <g data-metric="0"><text class="number" x="200" y="42">4,598</text><text class="label" x="200" y="67">Total contributions</text><text class="range" x="200" y="88">Since Mar 19, 2025</text></g>
+  <g data-metric="1"><text class="number" x="100" y="147">74</text><text class="label" x="100" y="172">Current streak · days</text><text class="range" x="100" y="193">Jun 23 – Sep 4</text></g>
+  <g data-metric="2"><text class="number" x="300" y="147">74</text><text class="label" x="300" y="172">Longest streak · days</text><text class="range" x="300" y="193">Jun 23 – Sep 4</text></g>
+</svg>

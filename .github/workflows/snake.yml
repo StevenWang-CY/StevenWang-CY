@@ -1,4 +1,4 @@
-name: generate animation
+name: Refresh profile
 
 on:
   schedule:
@@ -62,7 +62,7 @@ jobs:
           if [[ "$profile_date" != "$GENERATION_START_DATE" ]]; then
             rerun_snake=true
           fi
-          profile_cache_key="${profile_date}-r3"
+          profile_cache_key="${profile_date}-r4"
           printf 'PROFILE_CACHE_KEY=%s\n' "$profile_cache_key" >> "$GITHUB_ENV"
           printf 'profile-cache-key=%s\n' "$profile_cache_key" >> "$GITHUB_OUTPUT"
           printf 'rerun-snake=%s\n' "$rerun_snake" >> "$GITHUB_OUTPUT"
@@ -337,7 +337,7 @@ jobs:
           SHARED_PROFILE_CACHE_KEY: ${{ needs.generate-snake.outputs.profile-cache-key }}
         run: |
           set -euo pipefail
-          [[ "$SHARED_PROFILE_CACHE_KEY" =~ ^[0-9]{8}-r3$ ]]
+          [[ "$SHARED_PROFILE_CACHE_KEY" =~ ^[0-9]{8}-r4$ ]]
           printf 'PROFILE_CACHE_KEY=%s\n' "$SHARED_PROFILE_CACHE_KEY" >> "$GITHUB_ENV"
 
       - name: install ImageMagick for posters and GIF flipbooks
@@ -352,338 +352,15 @@ jobs:
 
       - name: validate generated profile files
         shell: bash
+        env:
+          PROFILE_OWNER: ${{ github.repository_owner }}
+          PUBLIC_CONTRIBUTIONS_SNAPSHOT: generated-data/profile-contributions.json
         run: |
           set -euo pipefail
-          node --check scripts/update-featured-repos.mjs
-          node --check scripts/public-contributions.mjs
-          node --check scripts/enhance-snake.mjs
-          test -s generated-data/profile-contributions.json
-          test ! -L generated-data/profile-contributions.json
-          grep -Fq 'headers: publicContributionHeaders' scripts/public-contributions.mjs
-          grep -Fq 'PUBLIC_CONTRIBUTIONS_SNAPSHOT' scripts/update-featured-repos.mjs
-          if grep -R -Fq 'api.github.com/graphql' scripts; then
-            echo "contribution metrics must come from GitHub's unauthenticated public calendar" >&2
-            exit 1
-          fi
+          for script in scripts/*.mjs; do node --check "$script"; done
+          node --test test/profile-refresh.test.mjs
+          python3 scripts/validate-profile.py
           git diff --check
-          test -s README.md
-          test -s assets/featured-0.svg
-          test -s assets/featured-1.svg
-          test ! -e assets/featured-2.svg
-          test -s assets/contribution-stats-light.svg
-          test -s assets/contribution-stats-dark.svg
-          test "$(find assets -maxdepth 1 -type f -name 'featured-*.svg' | wc -l | tr -d ' ')" = "2"
-          test "$(find assets -maxdepth 1 -type f -name 'contribution-stats-*.svg' | wc -l | tr -d ' ')" = "2"
-          test "$(sed -n '/FEATURED-REPOS:START/,/FEATURED-REPOS:END/p' README.md | grep -c '<a href=')" = "2"
-          grep -Fq 'href="https://github.com/${{ github.repository_owner }}/township"' README.md
-          grep -Fq 'href="https://github.com/${{ github.repository_owner }}/SILKern."' README.md
-          for index in 0 1; do
-            grep -Fq "raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.repository_owner }}/main/assets/featured-${index}.svg" README.md
-            grep -Fq '<svg width="846" height="212"' "assets/featured-${index}.svg"
-            grep -Fq 'data:image/png;base64,' "assets/featured-${index}.svg"
-          done
-          grep -Fq '>township</text>' assets/featured-0.svg
-          grep -Fq 'Hero source: docs/media/social-preview.png.' assets/featured-0.svg
-          grep -Fq '>SILKern.</text>' assets/featured-1.svg
-          grep -Fq 'Hero source: assets/cover.png.' assets/featured-1.svg
-          python3 <<'PY'
-          from pathlib import Path
-          import json
-          import os
-          import re
-          import xml.etree.ElementTree as ET
-
-          local = lambda tag: tag.rsplit("}", 1)[-1]
-          card_stars = []
-          for index in (0, 1):
-              asset = Path(f"assets/featured-{index}.svg")
-              root = ET.fromstring(asset.read_text(encoding="utf8"))
-              star_nodes = [
-                  element
-                  for element in root.iter()
-                  if (
-                      local(element.tag) == "text"
-                      and element.attrib.get("class") == "meta"
-                      and element.attrib.get("x") == "50"
-                  )
-              ]
-              if len(star_nodes) != 1 or not (star_nodes[0].text or "").isdigit():
-                  raise SystemExit(f"{asset}: live star count is missing or invalid")
-              card_stars.append(int(star_nodes[0].text))
-          cache_key = os.environ["PROFILE_CACHE_KEY"]
-          snapshot = json.loads(
-              Path("generated-data/profile-contributions.json").read_text(encoding="utf8")
-          )
-          contributions = snapshot.get("totalContributions")
-          if not isinstance(contributions, int) or contributions < 2_000:
-              raise SystemExit("profile snapshot: contribution total is invalid")
-          readme = Path("README.md").read_text(encoding="utf8")
-          featured = readme[
-              readme.index("<!-- FEATURED-REPOS:START -->"):
-              readme.index("<!-- FEATURED-REPOS:END -->")
-          ]
-          for index, stars in enumerate(card_stars):
-              label = f"{stars} {'star' if stars == 1 else 'stars'}"
-              expected_source = (
-                  "https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/"
-                  f"main/assets/featured-{index}.svg?v={cache_key}-s{stars}"
-              )
-              if f" — {label} — " not in featured or featured.count(expected_source) != 1:
-                  raise SystemExit(
-                      f"profile: featured-{index} numbers, alt text, or cache key disagree"
-                  )
-          # Cards may legitimately share a star count, so count the star-suffixed
-          # cache keys once across the whole README instead of per card.
-          star_keys = re.findall(rf"v={re.escape(cache_key)}-s\d+", readme)
-          if (
-              len(star_keys) != len(card_stars)
-              or readme.count(f"v={cache_key}-c{contributions}") != 6
-          ):
-              raise SystemExit(
-                  "profile: generated numbers, alt text, and content cache keys disagree"
-              )
-          PY
-          python3 <<'PY'
-          from pathlib import Path
-          import json
-          import re
-          import xml.etree.ElementTree as ET
-
-          allowed_tags = {
-              "svg", "title", "desc", "style", "defs", "clipPath", "rect",
-              "mask", "ellipse", "g", "line", "text", "circle", "path",
-          }
-          expected_refs = {"#outer_rectangle", "#mask_out_ring_behind_fire"}
-          results = []
-          for variant in ("light", "dark"):
-              path = Path(f"assets/contribution-stats-{variant}.svg")
-              raw = path.read_text()
-              if len(raw.encode()) > 64 * 1024:
-                  raise SystemExit(f"{path}: compact streak card exceeds 64 KiB")
-              if re.search(
-                  r"<!DOCTYPE|<!ENTITY|<\s*(?:script|foreignObject|image|use|a|animate|set)\b|"
-                  r"\s+on[a-z]+\s*=|(?:href|xlink:href)\s*=|@import|javascript:|data:",
-                  raw,
-                  re.IGNORECASE,
-              ):
-                  raise SystemExit(f"{path}: unsafe SVG content")
-              root = ET.fromstring(raw)
-              local = lambda tag: tag.rsplit("}", 1)[-1]
-              if (
-                  local(root.tag) != "svg"
-                  or root.attrib.get("viewBox") != "0 0 495 195"
-                  or root.attrib.get("width") != "495px"
-                  or root.attrib.get("height") != "195px"
-              ):
-                  raise SystemExit(f"{path}: not Peng's compact 495x195 layout")
-              tags = [local(element.tag) for element in root.iter()]
-              if set(tags) - allowed_tags:
-                  raise SystemExit(f"{path}: unexpected SVG tags {set(tags) - allowed_tags}")
-              if tags.count("line") != 2 or tags.count("text") != 9:
-                  raise SystemExit(f"{path}: compact card structure changed")
-              for element in root.iter():
-                  for name, value in element.attrib.items():
-                      attr = local(name).lower()
-                      if attr.startswith("on") or attr == "href":
-                          raise SystemExit(f"{path}: unsafe attribute {name}")
-                      if re.search(r"javascript:|data:", value, re.IGNORECASE):
-                          raise SystemExit(f"{path}: unsafe attribute value")
-              refs = set(re.findall(r"url\(([^)]+)\)", raw))
-              if not refs.issubset(expected_refs):
-                  raise SystemExit(f"{path}: unexpected URL references {refs}")
-              required = (
-                  "@keyframes currstreak", "@keyframes fadein",
-                  "mask_out_ring_behind_fire", "cx='247.5' cy='71' r='40'",
-                  "stroke='#FB8C00'", "Current Streak", "Longest Streak",
-                  "Total Contributions", "1.4s both",
-              )
-              if any(value not in raw for value in required):
-                  raise SystemExit(f"{path}: Peng-compatible animation/layout is incomplete")
-              forbidden = ("Contribution rhythm", "Updated daily from GitHub", "LAST 28 DAYS")
-              if any(value in raw for value in forbidden):
-                  raise SystemExit(f"{path}: rejected custom dashboard design remains")
-              if variant == "light" and not all(c in raw for c in ("#FFFEFE", "#151515", "#464646")):
-                  raise SystemExit(f"{path}: light palette changed")
-              if variant == "dark" and not all(c in raw for c in ("#151515", "#FEFEFE", "#9E9E9E")):
-                  raise SystemExit(f"{path}: dark palette changed")
-              texts = ["".join(element.itertext()).strip() for element in root.iter() if local(element.tag) == "text"]
-              match = re.search(r"([\d,]+) total contributions", raw)
-              if not match:
-                  raise SystemExit(f"{path}: contribution total is missing")
-              results.append((texts, int(match.group(1).replace(",", ""))))
-          if results[0][0] != results[1][0]:
-              raise SystemExit("light/dark streak metrics differ")
-          snapshot = json.loads(Path("generated-data/profile-contributions.json").read_text())
-          if (
-              results[0][1] < 2_000
-              or results[0][1] != results[1][1]
-              or results[0][1] != snapshot.get("totalContributions")
-          ):
-              raise SystemExit(f"invalid contribution totals: {results[0][1]}, {results[1][1]}")
-          PY
-          grep -Fq 'assets/contribution-stats-light.svg' README.md
-          grep -Fq 'assets/contribution-stats-dark.svg' README.md
-          grep -Fq 'animated as a snake with a synchronized contribution counter' README.md
-          # These literal smart quotes are part of the profile name.
-          # shellcheck disable=SC1112
-          grep -Fq 'alt="Chuyue “Steven” Wang’s GitHub streak"' README.md
-          stats_block="$(sed -n '/CONTRIBUTION-STATS:START/,/CONTRIBUTION-STATS:END/p' README.md)"
-          if grep -Eq '#stats-(summary|longest)|align="(left|right)"|<br' <<<"$stats_block" \
-            || [[ "$(grep -o '<picture>' <<<"$stats_block" | wc -l | tr -d ' ')" != "4" ]] \
-            || [[ "$(grep -o 'width="58.5%"' <<<"$stats_block" | wc -l | tr -d ' ')" != "1" ]] \
-            || [[ "$(grep -o 'width="12.4%"' <<<"$stats_block" | wc -l | tr -d ' ')" != "3" ]]; then
-            echo "single-row Peng stats and contact strip is incomplete" >&2
-            exit 1
-          fi
-          if grep -Fq 'streak-stats.demolab.com' README.md; then
-            echo "README still depends on the live third-party streak service" >&2
-            exit 1
-          fi
-          for icon in website linkedin email; do
-            test -s "assets/contact-${icon}.svg"
-            test ! -L "assets/contact-${icon}.svg"
-          done
-          python - <<'PY'
-          import base64
-          import hashlib
-          import re
-          from pathlib import Path
-          from xml.etree import ElementTree as ET
-
-          namespace = "{http://www.w3.org/2000/svg}"
-          names = ("website", "linkedin", "email")
-          labels = {"website": "Website", "linkedin": "LinkedIn", "email": "Email"}
-          forbidden_tags = {"animate", "animateMotion", "animateTransform", "foreignObject", "script", "set", "use"}
-
-          def local(value):
-              return value.rsplit("}", 1)[-1]
-
-          for name in names:
-              path = Path(f"assets/contact-{name}.svg")
-              raw_bytes = path.read_bytes()
-              if len(raw_bytes) > 16 * 1024:
-                  raise SystemExit(f"{path}: contact asset exceeds 16 KiB")
-              raw = raw_bytes.decode("utf-8")
-              lowered = raw.lower()
-              if "<!doctype" in lowered or "<!entity" in lowered:
-                  raise SystemExit(f"{path}: document types and entities are forbidden")
-              root = ET.fromstring(raw)
-              if (
-                  root.tag != f"{namespace}svg"
-                  or root.get("width") != "105"
-                  or root.get("height") != "195"
-                  or root.get("viewBox") != "0 0 105 195"
-                  or root.get("role") != "img"
-              ):
-                  raise SystemExit(f"{path}: contact geometry or accessibility metadata changed")
-
-              title = root.find(f"{namespace}title")
-              description = root.find(f"{namespace}desc")
-              if (
-                  title is None
-                  or title.text != labels[name]
-                  or description is None
-                  or not "Chuyue Steven Wang" in (description.text or "")
-              ):
-                  raise SystemExit(f"{path}: title or description changed")
-
-              elements = list(root.iter())
-              tags = {local(element.tag) for element in elements}
-              if tags & forbidden_tags:
-                  raise SystemExit(f"{path}: active or externally reusable SVG content is forbidden")
-              if tags & {"rect", "ellipse"}:
-                  raise SystemExit(f"{path}: contact cards, pills, and ellipse surfaces are forbidden")
-              caption_elements = [element for element in elements if local(element.tag) == "text"]
-              captions = ["".join(element.itertext()).strip() for element in caption_elements]
-              if captions != [labels[name]]:
-                  raise SystemExit(f"{path}: visible caption changed")
-              if (
-                  caption_elements[0].get("x") != "43"
-                  or caption_elements[0].get("y") != "101.5"
-                  or not all(color in raw for color in ("#464646", "#9E9E9E"))
-              ):
-                  raise SystemExit(f"{path}: compact beside-icon label layout changed")
-
-              images = []
-              for element in elements:
-                  for attribute, value in element.attrib.items():
-                      attribute_name = local(attribute)
-                      if attribute_name.lower().startswith("on"):
-                          raise SystemExit(f"{path}: event attributes are forbidden")
-                      if attribute_name == "href":
-                          if local(element.tag) != "image" or not value.startswith("data:image/jpeg;base64,"):
-                              raise SystemExit(f"{path}: external SVG references are forbidden")
-                          images.append(value)
-
-              if name == "website":
-                  if len(images) != 1 or "portrait-clip" not in raw:
-                      raise SystemExit(f"{path}: embedded clipped profile portrait is missing")
-                  portrait = base64.b64decode(images[0].split(",", 1)[1], validate=True)
-                  if (
-                      len(portrait) > 4 * 1024
-                      or not portrait.startswith(b"\xff\xd8")
-                      or not portrait.endswith(b"\xff\xd9")
-                      or hashlib.sha256(portrait).hexdigest() != "5fd68a48d5e61a8525330a94cd2256375e48df34726a8a7acd2f48cdbf10378d"
-                  ):
-                      raise SystemExit(f"{path}: embedded profile portrait changed")
-              elif images:
-                  raise SystemExit(f"{path}: unexpected embedded image")
-
-              if name == "linkedin" and ("#0A66C2" not in raw or "M1.91 0h22.363" not in raw):
-                  raise SystemExit(f"{path}: official LinkedIn mark changed")
-              if name == "email" and not all(token in raw for token in ("#fc413d", "gmail-side", "gmail-chevron")):
-                  raise SystemExit(f"{path}: official Gmail artwork changed")
-
-          readme = Path("README.md").read_text()
-          expected_links = (
-              ('https://chuyuewang.vercel.app/', 'Visit my website', 'Website', 'website'),
-              ('https://www.linkedin.com/in/chuyue-wang/', 'Connect on LinkedIn', 'LinkedIn', 'linkedin'),
-              ('mailto:stevenwang0805@outlook.com', 'Send me an email', 'Email', 'email'),
-          )
-          positions = []
-          contact_tiles = []
-          for destination, title, label, name in expected_links:
-              snippet = (
-                  f'<a href="{destination}" title="{title}"><picture><img align="top" alt="{label}" '
-                  f'src="https://raw.githubusercontent.com/StevenWang-CY/StevenWang-CY/main/assets/contact-{name}.svg?v=contact-inline-strip-r1" '
-                  'width="12.4%" /></picture></a>'
-              )
-              if readme.count(snippet) != 1:
-                  raise SystemExit(f"README: exact {name} contact link is missing or duplicated")
-              positions.append(readme.index(snippet))
-              contact_tiles.append(snippet)
-          stats_start = readme.index("<!-- CONTRIBUTION-STATS:START -->")
-          stats_end = readme.index("<!-- CONTRIBUTION-STATS:END -->")
-          expected_strip = "".join(contact_tiles)
-          if (
-              positions != sorted(positions)
-              or positions[0] <= stats_start
-              or positions[-1] >= stats_end
-              or readme.count(expected_strip) != 1
-              or "#stats-summary" in readme
-              or "#stats-longest" in readme
-              or "contact-borderless-r1" in readme
-              or "contact-stats-rail-r1" in readme
-              or "contact-stats-rail-r2" in readme
-          ):
-              raise SystemExit("README: ordered inline stats/contact strip changed")
-          if len(re.findall(r"assets/contact-(?:website|linkedin|email)\.svg", readme)) != 3:
-              raise SystemExit("README: unexpected contact asset reference")
-          outside_stats = readme[:stats_start] + readme[stats_end + len("<!-- CONTRIBUTION-STATS:END -->"):]
-          if re.search(r"assets/contact-(?:website|linkedin|email)\.svg", outside_stats):
-              raise SystemExit("README: legacy contact footer returned")
-          PY
-          test "$(tail -n 1 README.md)" = "<!-- CONTRIBUTION-STATS:END -->"
-          # Three snake URLs + three contribution-stats URLs + one per featured card.
-          test "$(grep -o "v=${PROFILE_CACHE_KEY}" README.md | wc -l | tr -d ' ')" = "8"
-          if grep -RIE 'zxpeng2007/zxpeng2007/(output|main/assets)|user=zxpeng2007|Zixuan' README.md assets scripts; then
-            echo "reference identity leaked into generated profile files" >&2
-            exit 1
-          fi
-          if find assets -type f \( -name 'featured-*.svg' -o -name 'contribution-stats-*.svg' \) -size +8M -print -quit | grep -q .; then
-            echo "generated profile image exceeds the 8 MiB safety limit" >&2
-            exit 1
-          fi
           git rev-parse HEAD > featured-base-sha.txt
 
       - name: stage featured-repository artifact
@@ -729,13 +406,17 @@ jobs:
           test -s generated/README.md
           test -s generated/assets/featured-0.svg
           test -s generated/assets/featured-1.svg
+          test -s generated/assets/featured-0-mobile.svg
+          test -s generated/assets/featured-1-mobile.svg
           test ! -e generated/assets/featured-2.svg
           test -s generated/assets/contribution-stats-light.svg
           test -s generated/assets/contribution-stats-dark.svg
-          test "$(find generated/assets -maxdepth 1 -type f -name 'featured-*.svg' | wc -l | tr -d ' ')" = "2"
-          test "$(find generated/assets -maxdepth 1 -type f -name 'contribution-stats-*.svg' | wc -l | tr -d ' ')" = "2"
-          # README + base-sha + two featured cards + two contribution-stats cards.
-          test "$(find generated -type f | wc -l | tr -d ' ')" = "6"
+          test -s generated/assets/contribution-stats-mobile-light.svg
+          test -s generated/assets/contribution-stats-mobile-dark.svg
+          test "$(find generated/assets -maxdepth 1 -type f -name 'featured-*.svg' | wc -l | tr -d ' ')" = "4"
+          test "$(find generated/assets -maxdepth 1 -type f -name 'contribution-stats-*.svg' | wc -l | tr -d ' ')" = "4"
+          # README + base-sha + four project cards + four contribution-statistics variants.
+          test "$(find generated -type f | wc -l | tr -d ' ')" = "10"
           if find generated -type l -print -quit | grep -q .; then
             echo "generated artifact contains a symbolic link" >&2
             exit 1

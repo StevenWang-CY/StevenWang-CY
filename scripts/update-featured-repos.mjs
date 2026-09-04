@@ -1,13 +1,8 @@
-// Regenerates the featured project section from deliberately selected
-// repositories, in order: township, then SILKern. Each card always uses a
-// required hero image that the repository's own README still references — the
-// Township social preview and the SILKern media-kit cover — then
-// splices the linked cards between the FEATURED-REPOS markers in README.md, one
-// card per project, newest feature first. It also generates repository-served
-// light/dark contribution statistics from GitHub's own annual calendars and
-// keys snake/stat images by their live contribution total and the featured
-// card by its live star count, so changed numbers invalidate GitHub's image
-// cache immediately after a refresh run without no-op URL churn.
+// Refreshes the selected Township and SILKern projects, plus light/dark
+// contribution statistics. Curated artwork comes directly from each repo;
+// missing artwork retains the last published poster so metrics keep updating.
+// Mobile and desktop cards share the same live stars and contribution snapshot.
+// Content-based URL suffixes invalidate GitHub's image cache when counts change.
 //
 // SVG cards are used because GitHub sanitizes CSS out of README HTML:
 // fonts and absolute positioning only survive inside an <img>-embedded
@@ -25,6 +20,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPublicContributions } from "./public-contributions.mjs";
+import { renderProjectCard, renderContributionStats, projectAlt, artworkWithFallback } from "./profile-design.mjs";
 
 const [, , userName] = process.argv;
 
@@ -42,7 +38,7 @@ const readmeFile = path.join(repoRoot, "README.md");
 // The date supplies a stable daily base; live star/contribution suffixes change
 // rendered URLs within that day. The revision changes whenever the image
 // contract changes so GitHub's image proxy cannot retain an older design.
-const CACHE_REVISION = "r3";
+const CACHE_REVISION = "r4";
 const dailyCacheKey =
   process.env.PROFILE_CACHE_KEY ??
   `${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${CACHE_REVISION}`;
@@ -64,6 +60,9 @@ if (
 const FEATURED_PROJECTS = [
   {
     name: "township",
+    title: "Township",
+    category: "AGENT SIMULATION",
+    summary: "AI residents deliberate civic questions in a living pixel town, with replayable scenarios and decisions.",
     heroPath: "docs/media/social-preview.png",
     heroMime: "image/png",
     heroSourceWidth: 1280,
@@ -74,6 +73,9 @@ const FEATURED_PROJECTS = [
   },
   {
     name: "SILKern.",
+    title: "SILKern",
+    category: "INFERENCE SYSTEMS",
+    summary: "Deterministic sparse-index localization for context-parallel decode. Allocation-free and CUDA-graph-safe.",
     heroPath: "assets/cover.png",
     heroMime: "image/png",
     heroSourceWidth: 1280,
@@ -172,6 +174,9 @@ const featuredRepos = await Promise.all(
     }
     return {
       ...repo,
+      profileTitle: project.title,
+      profileCategory: project.category,
+      profileSummary: project.summary,
       profileHeroPath: project.heroPath,
       profileHeroMime: project.heroMime,
       profileHeroSourceWidth: project.heroSourceWidth,
@@ -378,11 +383,6 @@ function plausibleHero(bytes, r) {
   }
 }
 
-const MONTH_NAMES = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
 function isoDate(date) {
   return date.toISOString().slice(0, 10);
 }
@@ -461,24 +461,8 @@ async function requiredHeroImageData(r) {
     throw new Error(`required hero configuration is missing for ${r.name}`);
   }
 
-  const readmeResponse = await fetchWithRetry(
-    `https://api.github.com/repos/${encodeURIComponent(userName)}/${encodeURIComponent(r.name)}/readme`,
-    { headers: apiHeaders },
-  );
-  if (!readmeResponse.ok) {
-    throw new Error(`README lookup failed for ${r.name}: HTTP ${readmeResponse.status}`);
-  }
-  const readme = await readmeResponse.json();
-  const readmeText = Buffer.from(readme.content, "base64").toString("utf8");
-  const resolvedSources = readmeImageSources(readmeText)
-    .map((source) => resolveReadmeImagePath(source, readme.path ?? "README.md"))
-    .filter(Boolean);
-  if (!resolvedSources.includes(expectedPath)) {
-    throw new Error(
-      `${r.name} README no longer references required hero ${expectedPath}`,
-    );
-  }
-
+  // Fetch the curated repository asset directly. README layout changes must
+  // not invalidate existing artwork or block the statistics refresh.
   const encodedPath = expectedPath.split("/").map(encodeURIComponent).join("/");
   const assetResponse = await fetchWithRetry(
     `https://api.github.com/repos/${encodeURIComponent(userName)}/${encodeURIComponent(r.name)}/contents/${encodedPath}?ref=${encodeURIComponent(r.default_branch)}`,
@@ -523,7 +507,7 @@ async function requiredHeroImageData(r) {
   if (!plausibleHero(bytes, r)) {
     throw new Error(`required hero has unusable dimensions for ${r.name}`);
   }
-  console.log(`using required README hero for ${r.name}: ${expectedPath}`);
+  console.log(`using repository artwork for ${r.name}: ${expectedPath}`);
   return { bytes, mime: expectedMime };
 }
 
@@ -673,284 +657,49 @@ async function heroImageData(r) {
   return { kind: "static", mime, base64: bytes.toString("base64") };
 }
 
-// ---------------------------------------------------------------------------
-// Fixed-layout SVG card. Everything is absolutely positioned on an
-// 846x212 canvas; Cambria (with serif fallbacks) for all text; light
-// and dark palettes switch via prefers-color-scheme, matching how the
-// README's <picture> blocks behave.
-// ---------------------------------------------------------------------------
-
-const LANG_COLORS = {
-  Python: "#3572A5",
-  "Jupyter Notebook": "#DA5B0B",
-  HTML: "#e34c26",
-  CSS: "#663399",
-  JavaScript: "#f1e05a",
-  TypeScript: "#3178c6",
-  "C++": "#f34b7d",
-  C: "#555555",
-  "C#": "#178600",
-  Rust: "#dea584",
-  Go: "#00ADD8",
-  Java: "#b07219",
-  Kotlin: "#A97BFF",
-  Swift: "#F05138",
-  Shell: "#89e051",
-  MATLAB: "#e16737",
-  Cuda: "#3A4E3A",
-};
-
-const STAR_PATH =
-  "M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z";
-
-function fmtPct(n) {
-  return n.toFixed(3).replace(/\.?0+$/, "");
-}
-
-// Flipbook CSS: frame i is fully visible for its 1/F share of the
-// cycle and hidden otherwise, with explicit 0% stops and near-instant
-// (0.01%) snaps between stops — without a 0% stop browsers would tween
-// opacity across the whole waiting period.
-function flipbookCss(frameCount, cycleSec) {
-  const EPS = 0.01;
-  let css = `.gf{opacity:0;animation-duration:${cycleSec}s;animation-timing-function:linear;animation-iteration-count:infinite;animation-name:none}`;
-  for (let i = 0; i < frameCount; i++) {
-    const a = (i / frameCount) * 100;
-    const b = ((i + 1) / frameCount) * 100;
-    let kf;
-    if (i === 0) {
-      kf = `0%,${fmtPct(b)}%{opacity:1}${fmtPct(b + EPS)}%,100%{opacity:0}`;
-    } else if (i === frameCount - 1) {
-      kf = `0%,${fmtPct(a - EPS)}%{opacity:0}${fmtPct(a)}%,100%{opacity:1}`;
-    } else {
-      kf = `0%,${fmtPct(a - EPS)}%{opacity:0}${fmtPct(a)}%,${fmtPct(b)}%{opacity:1}${fmtPct(b + EPS)}%,100%{opacity:0}`;
-    }
-    css += `@keyframes g${i}{${kf}}.gf.g${i}{animation-name:g${i}}`;
-  }
-  return `${css}@media (prefers-reduced-motion:reduce){.gf{animation:none!important;opacity:0}.gf.g0{opacity:1}}`;
-}
-
-function svgCard(r, image) {
-  const W = 846;
-  const H = 212;
-  const IMG_Y = (H - 164) / 2;
-  const META_BASELINE = H - 27;
-  const FONT = "Cambria, Georgia, 'Times New Roman', serif";
-  const langColor = LANG_COLORS[r.language] ?? "#8b949e";
-  const stars = r.stargazers_count;
-
-  let imagePart = "";
-  let flipCss = "";
-  if (image) {
-    const box = `x="502" y="${IMG_Y}" width="328" height="164"`;
-    const clip = `  <clipPath id="hero"><rect ${box} rx="6"/></clipPath>`;
-    const frameRect = `  <rect class="frame" x="502.5" y="${IMG_Y + 0.5}" width="327" height="163" rx="6"/>`;
-    if (image.kind === "anim") {
-      flipCss = flipbookCss(image.frames.length, image.cycleSec);
-      const layers = image.frames
-        .map(
-          (b64, i) =>
-            `    <image class="gf g${i}" ${box} preserveAspectRatio="xMidYMid slice" href="data:${image.mime};base64,${b64}"/>`,
-        )
-        .join("\n");
-      imagePart = [clip, `  <g clip-path="url(#hero)">`, layers, `  </g>`, frameRect].join("\n");
-    } else {
-      imagePart = [
-        clip,
-        `  <image ${box} preserveAspectRatio="xMidYMid slice" clip-path="url(#hero)" href="data:${image.mime};base64,${image.base64}"/>`,
-        frameRect,
-      ].join("\n");
-    }
-  }
-
-  const langPart = r.language
-    ? [
-        `  <circle cx="122" cy="${META_BASELINE - 5}" r="6" fill="${langColor}"/>`,
-        `  <text class="meta" x="134" y="${META_BASELINE}">${esc(r.language)}</text>`,
-      ].join("\n")
-    : "";
-  const cardDescription = [
-    `${r.name} featured project card.`,
-    r.profileHeroPath ? `Hero source: ${r.profileHeroPath}.` : "",
-  ].filter(Boolean).join(" ");
-
-  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <desc>${esc(cardDescription)}</desc>
-  <style>
-    text, div { font-family: ${FONT}; }
-    .card { fill: #ffffff; stroke: #d1d9e0; }
-    .frame { fill: none; stroke: #d1d9e0; }
-    .name { fill: #0969da; font-size: 22px; font-weight: 700; }
-    .desc { font-family: ${FONT}; font-size: 15px; line-height: 1.5; color: #59636e; margin: 0; overflow: hidden; overflow-wrap: anywhere; max-height: 90px; }
-    .meta { fill: #59636e; font-size: 14px; }
-    .star { fill: #59636e; }
-    @media (prefers-color-scheme: dark) {
-      .card { fill: #161b22; stroke: #3d444d; }
-      .frame { stroke: #3d444d; }
-      .name { fill: #4493f8; }
-      .desc { color: #9198a1; }
-      .meta { fill: #9198a1; }
-      .star { fill: #9198a1; }
-    }
-    ${flipCss}
-  </style>
-  <rect class="card" x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" rx="8"/>
-  <text class="name" x="28" y="48">${esc(r.name)}</text>
-  <foreignObject x="28" y="64" width="440" height="94">
-    <div xmlns="http://www.w3.org/1999/xhtml" class="desc">${esc(r.description ?? "")}</div>
-  </foreignObject>
-  <g transform="translate(28, ${META_BASELINE - 17})"><path class="star" d="${STAR_PATH}"/></g>
-  <text class="meta" x="50" y="${META_BASELINE}">${stars}</text>
-${langPart}
-${imagePart}
-</svg>
-`;
-}
-
-function pengDate(value, includeYear = false) {
-  const [year, month, day] = value.split("-").map(Number);
-  return `${MONTH_NAMES[month - 1]} ${day}${includeYear ? `, ${year}` : ""}`;
-}
-
-function pengRange(start, end) {
-  if (!start || !end) return pengDate(isoDate(profileDate));
-  if (start === end) return pengDate(start);
-  const spansYears = start.slice(0, 4) !== end.slice(0, 4);
-  return `${pengDate(start, spansYears)} - ${pengDate(end, spansYears)}`;
-}
-
-// Visual geometry and animation timings follow the MIT-licensed default card
-// used by Peng. See THIRD_PARTY_NOTICES.md for source and license details.
-function contributionStatsSvg(stats, dark) {
-  const background = dark ? "#151515" : "#FFFEFE";
-  const primary = dark ? "#FEFEFE" : "#151515";
-  const muted = dark ? "#9E9E9E" : "#464646";
-  const divider = "#E4E2E2";
-  const accent = "#FB8C00";
-  const totalRange = stats.firstActiveDate
-    ? `${pengDate(stats.firstActiveDate, true)} - Present`
-    : "No contributions yet";
-  const currentRange = pengRange(stats.currentStartDate, stats.currentEndDate);
-  const longestRange = pengRange(stats.longestStartDate, stats.longestEndDate);
-  const description = [
-    `${userName} GitHub streak statistics.`,
-    `${commaNumber(stats.total)} total contributions.`,
-    `${stats.currentStreak}-day current streak.`,
-    `${stats.longestStreak}-day longest streak.`,
-  ].join(" ");
-
-  return `<svg xmlns='http://www.w3.org/2000/svg' style='isolation: isolate' viewBox='0 0 495 195' width='495px' height='195px' direction='ltr'>
-  <title>GitHub streak statistics</title>
-  <desc>${esc(description)}</desc>
-  <style>
-    @keyframes currstreak {
-      0% { font-size: 3px; opacity: 0.2; }
-      80% { font-size: 34px; opacity: 1; }
-      100% { font-size: 28px; opacity: 1; }
-    }
-    @keyframes fadein {
-      0% { opacity: 0; }
-      100% { opacity: 1; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      [style*='animation'] { animation: none !important; opacity: 1 !important; }
-    }
-  </style>
-  <defs>
-    <clipPath id='outer_rectangle'>
-      <rect width='495' height='195' rx='4.5'/>
-    </clipPath>
-    <mask id='mask_out_ring_behind_fire'>
-      <rect width='495' height='195' fill='white'/>
-      <ellipse cx='247.5' cy='32' rx='13' ry='18' fill='black'/>
-    </mask>
-  </defs>
-  <g clip-path='url(#outer_rectangle)'>
-    <rect stroke='#000000' stroke-opacity='0' fill='${background}' rx='4.5' x='0.5' y='0.5' width='494' height='194'/>
-    <line x1='165' y1='28' x2='165' y2='170' vector-effect='non-scaling-stroke' stroke-width='1' stroke='${divider}' stroke-linejoin='miter' stroke-linecap='square' stroke-miterlimit='3'/>
-    <line x1='330' y1='28' x2='330' y2='170' vector-effect='non-scaling-stroke' stroke-width='1' stroke='${divider}' stroke-linejoin='miter' stroke-linecap='square' stroke-miterlimit='3'/>
-
-    <g transform='translate(82.5, 48)'>
-      <text x='0' y='32' text-anchor='middle' fill='${primary}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='700' font-size='28px' style='animation: fadein 0.5s linear 0.6s both'>${esc(commaNumber(stats.total))}</text>
-    </g>
-    <g transform='translate(82.5, 84)'>
-      <text x='0' y='32' text-anchor='middle' fill='${primary}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='400' font-size='14px' style='animation: fadein 0.5s linear 0.7s both'>Total Contributions</text>
-    </g>
-    <g transform='translate(82.5, 114)'>
-      <text x='0' y='32' text-anchor='middle' fill='${muted}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='400' font-size='12px' style='animation: fadein 0.5s linear 0.8s both'>${esc(totalRange)}</text>
-    </g>
-
-    <g transform='translate(247.5, 108)'>
-      <text x='0' y='32' text-anchor='middle' fill='${accent}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='700' font-size='14px' style='animation: fadein 0.5s linear 0.9s both'>Current Streak</text>
-    </g>
-    <g transform='translate(247.5, 145)'>
-      <text x='0' y='21' text-anchor='middle' fill='${muted}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='400' font-size='12px' style='animation: fadein 0.5s linear 0.9s both'>${esc(currentRange)}</text>
-    </g>
-    <g mask='url(#mask_out_ring_behind_fire)'>
-      <circle cx='247.5' cy='71' r='40' fill='none' stroke='${accent}' stroke-width='5' style='animation: fadein 0.5s linear 0.4s both'/>
-    </g>
-    <g transform='translate(247.5, 19.5)' stroke-opacity='0' style='animation: fadein 0.5s linear 0.6s both'>
-      <path d='M -12 -0.5 L 15 -0.5 L 15 23.5 L -12 23.5 L -12 -0.5 Z' fill='none'/>
-      <path d='M 1.5 0.67 C 1.5 0.67 2.24 3.32 2.24 5.47 C 2.24 7.53 0.89 9.2 -1.17 9.2 C -3.23 9.2 -4.79 7.53 -4.79 5.47 L -4.76 5.11 C -6.78 7.51 -8 10.62 -8 13.99 C -8 18.41 -4.42 22 0 22 C 4.42 22 8 18.41 8 13.99 C 8 8.6 5.41 3.79 1.5 0.67 Z M -0.29 19 C -2.07 19 -3.51 17.6 -3.51 15.86 C -3.51 14.24 -2.46 13.1 -0.7 12.74 C 1.07 12.38 2.9 11.53 3.92 10.16 C 4.31 11.45 4.51 12.81 4.51 14.2 C 4.51 16.85 2.36 19 -0.29 19 Z' fill='${accent}'/>
-    </g>
-    <g transform='translate(247.5, 48)'>
-      <text x='0' y='32' text-anchor='middle' fill='${primary}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='700' font-size='28px' style='animation: currstreak 0.6s linear forwards'>${esc(String(stats.currentStreak))}</text>
-    </g>
-
-    <g transform='translate(412.5, 48)'>
-      <text x='0' y='32' text-anchor='middle' fill='${primary}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='700' font-size='28px' style='animation: fadein 0.5s linear 1.2s both'>${esc(String(stats.longestStreak))}</text>
-    </g>
-    <g transform='translate(412.5, 84)'>
-      <text x='0' y='32' text-anchor='middle' fill='${primary}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='400' font-size='14px' style='animation: fadein 0.5s linear 1.3s both'>Longest Streak</text>
-    </g>
-    <g transform='translate(412.5, 114)'>
-      <text x='0' y='32' text-anchor='middle' fill='${muted}' font-family='Segoe UI, Ubuntu, sans-serif' font-weight='400' font-size='12px' style='animation: fadein 0.5s linear 1.4s both'>${esc(longestRange)}</text>
-    </g>
-  </g>
-</svg>
-`;
-}
-
-// ---------------------------------------------------------------------------
-// Write assets and splice the README block.
-// ---------------------------------------------------------------------------
+// Render the profile using the shared responsive design.
 
 fs.mkdirSync(assetsDir, { recursive: true });
 
 const [images, contributionStats] = await Promise.all([
-  Promise.all(featuredRepos.map(heroImageData)),
+  Promise.all(featuredRepos.map((repo, index) => {
+    const previousFile = path.join(assetsDir, `featured-${index}.svg`);
+    const previous = fs.existsSync(previousFile) ? fs.readFileSync(previousFile, "utf8") : "";
+    return artworkWithFallback(() => heroImageData(repo), previous);
+  })),
   contributionStatsData(),
 ]);
 
 for (const variant of ["light", "dark"]) {
-  const relativeFile = `assets/contribution-stats-${variant}.svg`;
-  const file = path.join(repoRoot, relativeFile);
-  const svg = contributionStatsSvg(contributionStats, variant === "dark");
-  if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== svg) {
-    writeFileAtomic(file, svg);
-    console.log(`wrote ${relativeFile}`);
+  for (const mobile of [false, true]) {
+    const relativeFile = `assets/contribution-stats-${mobile ? "mobile-" : ""}${variant}.svg`;
+    const file = path.join(repoRoot, relativeFile);
+    const svg = renderContributionStats(contributionStats, variant, {
+      mobile, userName, profileDate: isoDate(profileDate),
+    });
+    if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== svg) {
+      writeFileAtomic(file, svg);
+      console.log(`wrote ${relativeFile}`);
+    }
   }
 }
 
+const assetRoot = `https://raw.githubusercontent.com/${userName}/${userName}/main/assets`;
 const anchors = featuredRepos.map((r, i) => {
-  const relativeFile = `assets/featured-${i}.svg`;
-  const file = path.join(repoRoot, relativeFile);
-  const svg = svgCard(r, images[i]);
-  if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== svg) {
-    writeFileAtomic(file, svg);
-    console.log(`wrote ${relativeFile}`);
+  for (const mobile of [false, true]) {
+    const relativeFile = `assets/featured-${i}${mobile ? "-mobile" : ""}.svg`;
+    const file = path.join(repoRoot, relativeFile);
+    const svg = renderProjectCard(r, images[i], { mobile });
+    if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== svg) {
+      writeFileAtomic(file, svg);
+      console.log(`wrote ${relativeFile}`);
+    }
   }
-  const alt = [
-    r.name,
-    r.description,
-    `${r.stargazers_count} ${r.stargazers_count === 1 ? "star" : "stars"}`,
-    r.language,
-  ].filter(Boolean).join(" — ");
-  return `<a href="${r.html_url}"><img alt="${escAttr(alt)}" src="https://raw.githubusercontent.com/${userName}/${userName}/main/${relativeFile}" width="846" /></a>`;
+  return `<a href="${r.html_url}"><picture><source media="(max-width: 600px)" srcset="${assetRoot}/featured-${i}-mobile.svg" /><img alt="${escAttr(projectAlt(r))}" src="${assetRoot}/featured-${i}.svg" width="846" /></picture></a>`;
 });
 
 for (const file of fs.readdirSync(assetsDir)) {
-  const match = /^featured-(\d+)\.svg$/.exec(file);
+  const match = /^featured-(\d+)(?:-mobile)?\.svg$/.exec(file);
   if (match && Number(match[1]) >= featuredRepos.length) {
     fs.rmSync(path.join(assetsDir, file));
     console.log(`removed stale assets/${file}`);
@@ -976,15 +725,14 @@ if (
 const featuredUpdated =
   readme.slice(0, start + START.length) + "\n" + block + "\n" + readme.slice(end);
 
-const statsAlt = `Chuyue “Steven” Wang’s GitHub streak`;
-const assetRoot = `https://raw.githubusercontent.com/${userName}/${userName}/main/assets`;
-const statsBlock = `<div align="center">
-<picture>
+const statsAlt = `${commaNumber(contributionStats.total)} total contributions; ${contributionStats.currentStreak}-day current streak; ${contributionStats.longestStreak}-day longest streak`;
+const statsBlock = `<picture>
+  <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="${assetRoot}/contribution-stats-mobile-dark.svg" />
+  <source media="(max-width: 600px)" srcset="${assetRoot}/contribution-stats-mobile-light.svg" />
   <source media="(prefers-color-scheme: dark)" srcset="${assetRoot}/contribution-stats-dark.svg" />
   <source media="(prefers-color-scheme: light)" srcset="${assetRoot}/contribution-stats-light.svg" />
-  <img alt="${escAttr(statsAlt)}" src="${assetRoot}/contribution-stats-light.svg" width="58.5%" />
-</picture><a href="https://chuyuewang.vercel.app/" title="Visit my website"><picture><img align="top" alt="Website" src="${assetRoot}/contact-website.svg?v=contact-inline-strip-r1" width="12.4%" /></picture></a><a href="https://www.linkedin.com/in/chuyue-wang/" title="Connect on LinkedIn"><picture><img align="top" alt="LinkedIn" src="${assetRoot}/contact-linkedin.svg?v=contact-inline-strip-r1" width="12.4%" /></picture></a><a href="mailto:stevenwang0805@outlook.com" title="Send me an email"><picture><img align="top" alt="Email" src="${assetRoot}/contact-email.svg?v=contact-inline-strip-r1" width="12.4%" /></picture></a>
-</div>`;
+  <img alt="${escAttr(statsAlt)}" src="${assetRoot}/contribution-stats-light.svg" width="846" />
+</picture>`;
 const STATS_START = "<!-- CONTRIBUTION-STATS:START -->";
 const STATS_END = "<!-- CONTRIBUTION-STATS:END -->";
 const statsStart = featuredUpdated.indexOf(STATS_START);
@@ -1020,10 +768,10 @@ let refreshedUrlCount = 0;
 // Every featured card carries its own live star suffix so one project's
 // activity can never leave another card cached behind GitHub's image proxy.
 const featuredCacheKeys = new Map(
-  featuredRepos.map((r, index) => [
-    `/${userName}/${userName}/main/assets/featured-${index}.svg`,
+  featuredRepos.flatMap((r, index) => [false, true].map((mobile) => [
+    `/${userName}/${userName}/main/assets/featured-${index}${mobile ? "-mobile" : ""}.svg`,
     `${dailyCacheKey}-s${r.stargazers_count}`,
-  ]),
+  ])),
 );
 const contributionCacheKey = `${dailyCacheKey}-c${contributionStats.total}`;
 const updated = snakeUpdated.replace(/https:\/\/[^"'\s>]+/g, (match) => {
@@ -1048,8 +796,8 @@ const updated = snakeUpdated.replace(/https:\/\/[^"'\s>]+/g, (match) => {
   refreshedUrlCount += 1;
   return url.toString();
 });
-// Three snake URLs + three contribution-stats URLs + one URL per featured card.
-const expectedRefreshedUrls = 6 + featuredRepos.length;
+// Three snake URLs + five stats URLs + two URLs per featured project.
+const expectedRefreshedUrls = 8 + featuredRepos.length * 2;
 if (refreshedUrlCount !== expectedRefreshedUrls) {
   throw new Error(
     `expected ${expectedRefreshedUrls} dynamically refreshed image URLs, found ${refreshedUrlCount}`,

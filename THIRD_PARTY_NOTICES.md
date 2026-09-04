@@ -19,10 +19,9 @@ retrieved from `https://avatars.githubusercontent.com/u/203932027?v=4` on
 
 ## GitHub streak-statistics presentation
 
-The compact GitHub streak-statistics SVG presentation and its animation timing
-in `scripts/update-featured-repos.mjs` are adapted from
+Earlier versions of the GitHub streak-statistics presentation were adapted from
 [`DenverCoder1/github-readme-streak-stats`](https://github.com/DenverCoder1/github-readme-streak-stats),
-which is distributed under the MIT License:
+which is distributed under the MIT License. The notice is retained below:
 
 MIT License
 
